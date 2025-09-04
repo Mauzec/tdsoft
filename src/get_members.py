@@ -20,24 +20,44 @@ def parse_args() -> argparse.Namespace:
         # TODO: invite links not supported
         "chat", help="username, t.me/username, invite link(not supported yet)"
     )
-    p.add_argument('--limit', type=int, default=1000, help='maximum number of members to retrieve; default is 50000; (MAX: 50000)')
-    p.add_argument(
-        "--output", help="output csv file path; default is get-members-<time>.csv"
-    )
-    p.add_argument(
-        "--parse-from-messages", action='store_true', help="parse members from last --messages-limit messages")
-    p.add_argument("--messages-limit", type=int, default=10, help="number of messages to parse from, default 10; (MAX 5000)")
-
-    # todo
-    p.add_argument('--parse-bio', action='store_true', help='parse members from user bios')
+    p.add_argument('--limit', type=int, default=1000, 
+                   help='maximum number of members to retrieve; default is 50000; (MAX: 50000)')
     
     p.add_argument(
-        # TODO: not supported
+        "--output", type=str, 
+        help="output csv file path; default is get-members-<time>.csv")
+    
+    p.add_argument(
+        "--parse-from-messages", action='store_true',
+        help="parse members from last --messages-limit messages")
+    p.add_argument("--messages-limit", type=int, default=10,
+                   help="number of messages to parse from, default 10; (MAX 5000)")
+
+    # not supported 
+    p.add_argument('--full-users', type=int, help='''
+                   (EXPENSIVE OPERATION) expand user information 
+                   (bio, blocked, premium, premium_gifts and etc);''')
+    
+    # TODO
+    p.add_argument(
+        '--exclude-bots', action='store_true', help='exclude bots from the output'
+    )
+    
+    p.add_argument(
+        '--parse-bio', action='store_true', 
+        help='(+1 time) add user/bot bio to the output'
+    )
+    
+    p.add_argument(
+        '--add-additional-info', action='store_true',
+        help= 'add user/bot additional info to the output (bio, premium, scam flag, etc)'
+    )
+
+    # not supported yet
+    p.add_argument(
         '--auto-join', action='store_true', help='automatically join the chat if not a member')
     return p.parse_args()
     
-
-
 
 def status_is_member(status: enums.ChatMemberStatus) -> bool:
     return status not in [
@@ -46,17 +66,45 @@ def status_is_member(status: enums.ChatMemberStatus) -> bool:
         enums.ChatMemberStatus.BANNED
     ]
 
-def write_row(writer: csv.writer, u: types.User, is_member: bool) -> None:
-    writer.writerow([
-        u.id,
-        u.username or '',
-        u.first_name or '',
-        u.last_name or '',
-        'member' if is_member else 'not member',
-        'bot' if u.is_bot else 'user'
-    ])
-
+def write_row(writer: csv.DictWriter, u: types.User, 
+              is_member: bool, bio: str|None=None,
+              additional_info: List[str]|None=None) -> None:
+    '''
+    pass bio as None if not args.parse_bio,
+    otherwise as str('' if bio not available)
     
+    pass additional_info as None if not args.add_additional_info,
+    otherwise as List[str] (if item is not available, pass '' for it)
+    '''
+    
+    row = [u.id, u.username or '', u.first_name or '', u.last_name or '', 
+           'member' if is_member else 'not member',
+           'bot' if u.is_bot else 'user']
+    if bio is not None:
+        row.append(bio)
+    if additional_info is not None:
+        row.extend(additional_info)
+    
+    writer.writerow(row)
+    
+def get_additional_info(u: types.User) -> List[str]:
+    info = []
+    info.append('premium' if u.is_premium else 'not premium')
+    info.append('is_deleted' if u.is_deleted else 'not deleted')
+    info.append('scam' if u.is_scam else 'not scam')
+    info.append('verified' if u.is_verified else 'not verified')
+    info.append(u.phone_number or '')
+    return info
+    
+async def fetch_bio(u: types.User, app: Client) -> str:
+    try:
+        chat: types.Chat = await app.get_chat(u.id)
+        return chat.bio or ''
+    except errors.RPCError as e:
+        exit_on_rpc(e, sys.stderr)
+    return ''
+        
+
 async def fetch_members(
     app: Client,
     name: str,
@@ -72,9 +120,8 @@ async def fetch_members(
     chat_type = chat.type
     
     total = 0
-    with open(args.output, 'w', newline='', encoding='utf-8') as f:
+    with open(args.output, 'a', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        writer.writerow(['user_id', 'username', 'first_name', 'last_name', 'is_member', 'is_bot'])
         
         async def _write_members() -> None:
             nonlocal total
@@ -84,7 +131,20 @@ async def fetch_members(
                     if int(u.id) in users:
                         continue
                     is_member = status_is_member(m.status)
-                    write_row(writer, u, is_member)
+                    
+                    bio: str|None = None
+                    if args.parse_bio:
+                        if not u.is_bot:
+                            bio = await fetch_bio(u, app)
+                        else:
+                            bio = ''
+
+                    additional_info: List[str]|None = None
+                    if args.add_additional_info:
+                        additional_info = get_additional_info(u)
+                    
+                    write_row(writer, u, is_member, bio, additional_info)                    
+                    
                     total += 1
                     users[int(u.id)] = u
                 return None
@@ -157,8 +217,17 @@ async def fetch_members_from_messages(
                             value = int(getattr(e, 'value', 0))
                             await flood_wait_or_exit(value, f, f'Parsed {total_messages-1} messages so far, saved to {args.output}')
                         
-                        write_row(writer, u, is_member)
+                        bio: str|None = None
+                        if args.parse_bio:
+                            if not u.is_bot:
+                                bio = await fetch_bio(u, app)
+                            else:
+                                bio = ''
+                        additional_info: List[str]|None = None
+                        if args.add_additional_info:
+                            additional_info = get_additional_info(u)
                         
+                        write_row(writer, u, is_member, bio, additional_info)
                         
                         if total_messages >= args.messages_limit:
                             break
@@ -193,7 +262,7 @@ async def main():
         sys.exit(1)    
     
     if not args.output:
-        args.output = f'get-members-output-{int(time.time())}.csv'
+        args.output = f'get-members-{int(time.time())}.csv'
     
     options: Dict[str, Any] = get_tdlib_options()
     api_id: int = options["api_id"]
@@ -206,6 +275,15 @@ async def main():
     if kind == ChatNameKind.INVITE_LINK:
         print(f'invite links are not supported yet: {args.chat}', file=sys.stderr)
         sys.exit(1)
+        
+    columns = ['user_id', 'username', 'first_name', 'last_name', 'is_member', 'is_bot']
+    if args.parse_bio:
+        columns.append('bio')
+    if args.add_additional_info:
+        columns.extend(['premium_status', 'is_deleted', 'is_scam', 'is_verified', 'phone_number'])
+    with open(args.output, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(columns)
 
     async with Client('my_account', api_id, api_hash) as app:
         users: Dict[int, types.User] = await fetch_members(app, name, args)

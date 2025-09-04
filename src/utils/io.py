@@ -21,9 +21,10 @@ def flush_and_sync(f: TextIO) -> None:
     except OSError as e:
         print(f'detected error during fsync: {e}', file=sys.stderr)
 
-async def flood_wait_or_exit(value: int, f, progress_msg: str) -> None:
+async def flood_wait_or_exit(value: int, f: TextIO, progress_msg: str='') -> None:
     print(f'got flood_wait: {value} seconds', file=sys.stderr)
-    print(progress_msg, file=sys.stderr)
+    if progress_msg:
+        print(progress_msg, file=sys.stderr)
     
     if value > MAX_FLOOD_WAIT:
         print(f'flood wait too long ({value} seconds), stopping', file=sys.stderr)
