@@ -12,7 +12,7 @@ from urllib.parse import urlparse, ParseResult
 from typing import TextIO
 
 
-MAX_FLOOD_WAIT = 300
+# MAX_FLOOD_WAIT = 300
 
 def flush_and_sync(f: TextIO) -> None:
     try:
@@ -25,23 +25,25 @@ async def flood_wait_or_exit(value: int, f: TextIO, progress_msg: str='') -> Non
     print(f'got flood_wait: {value} seconds', file=sys.stderr)
     if progress_msg:
         print(progress_msg, file=sys.stderr)
+
+    print(f'saving file')
+    flush_and_sync(f)
     
-    if value > MAX_FLOOD_WAIT:
-        print(f'flood wait too long ({value} seconds), stopping', file=sys.stderr)
-        flush_and_sync(f)
-        sys.exit(1)
+    # if value > MAX_FLOOD_WAIT:
+    #     print(f'flood wait too long ({value} seconds), stopping', file=sys.stderr)
+    #     flush_and_sync(f)
+    #     sys.exit(1)
     
     print(f'waiting {value} seconds...', file=sys.stderr)
-    print(f'WARNING: task may be cancelled by system', file=sys.stderr)
+    print(f'you can stop the program and try later', file=sys.stderr)
     
     try:
         await asyncio.sleep(value + 1)
     except asyncio.CancelledError:
         print(f'task cancelled during wait', file=sys.stderr)
-        flush_and_sync(f)
         sys.exit(1)
 
-def exit_on_rpc(e: Exception, f) -> None:
+def exit_on_rpc(e: Exception, f: TextIO) -> None:
     print(f'got rpc error: {e}', file=sys.stderr)
     flush_and_sync(f)
     sys.exit(1)

@@ -21,7 +21,7 @@ def parse_args() -> argparse.Namespace:
         "chat", help="username, t.me/username, invite link(not supported yet)"
     )
     p.add_argument('--limit', type=int, default=1000, 
-                   help='maximum number of members to retrieve; default is 50000; (MAX: 50000)')
+                   help='maximum number of members to retrieve; default is 1000; (MAX: 50000)')
     
     p.add_argument(
         "--output", type=str, 
@@ -161,6 +161,7 @@ async def fetch_members(
     return users
         
     
+# TODO: add 
 async def fetch_members_from_messages(
     app: Client,
     name: str,
@@ -191,44 +192,24 @@ async def fetch_members_from_messages(
                     history: AsyncGenerator[types.Message, None] = \
                         app.get_chat_history(name, limit=page_size, offset_id=offset_id)
                     async for m in history:
+                        if not m.from_user:
+                            continue
+
+                        u: types.User = m.from_user
+
+                        if int(u.id) in users:
+                            continue
+
+                        users[int(u.id)] = u
+                        
+                        member: types.ChatMember = await app.get_chat_member(name, u.id)
+                        is_member = status_is_member(member.status)
+
+                        write_row(writer, u, is_member)
                         total_messages += 1
                         last_msg_id = m.id
                         curr_messages += 1
-                        
-           
-                        if not m.from_user:
-                            continue
-                        
-                        u: types.User = m.from_user
-                        
-                        if int(u.id) in users:
-                            continue
-                        
-                        users[int(u.id)] = u
-                        
-                        # check membership status
-                        is_member = False
-                        try:
-                            member: types.ChatMember = await app.get_chat_member(name, u.id)
-                            is_member = status_is_member(member.status)
-                        except errors.RPCError as e:
-                            exit_on_rpc(e, f)
-                        except errors.FloodWait as e:
-                            value = int(getattr(e, 'value', 0))
-                            await flood_wait_or_exit(value, f, f'Parsed {total_messages-1} messages so far, saved to {args.output}')
-                        
-                        bio: str|None = None
-                        if args.parse_bio:
-                            if not u.is_bot:
-                                bio = await fetch_bio(u, app)
-                            else:
-                                bio = ''
-                        additional_info: List[str]|None = None
-                        if args.add_additional_info:
-                            additional_info = get_additional_info(u)
-                        
-                        write_row(writer, u, is_member, bio, additional_info)
-                        
+
                         if total_messages >= args.messages_limit:
                             break
                     
@@ -240,7 +221,6 @@ async def fetch_members_from_messages(
                 
                 if curr_messages == 0 or last_msg_id is None or last_msg_id <= 1:
                     print(f'no more messages to parse, stopping', file=sys.stderr)
-                    
                     break
                 offset_id = last_msg_id
                 
@@ -281,7 +261,7 @@ async def main():
         columns.append('bio')
     if args.add_additional_info:
         columns.extend(['premium_status', 'is_deleted', 'is_scam', 'is_verified', 'phone_number'])
-    with open(args.output, 'a', newline='', encoding='utf-8') as f:
+    with open(args.output, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         writer.writerow(columns)
 

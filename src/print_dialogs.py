@@ -7,7 +7,7 @@ from pyrogram import Client, errors, types, enums
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Print dialogs to find chat ids")
-    p.add_argument("--limit", type=int, default=10, help="number of dialogs to print, default 50")
+    p.add_argument("--limit", type=int, default=50, help="number of dialogs to print, default 50")
     
     return p.parse_args()
 
