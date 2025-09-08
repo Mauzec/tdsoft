@@ -215,10 +215,12 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-my_account.session
+*.session
 
 *.csv
 
 .DS_Store
 
 *.cfg
+*app*
+*.env
