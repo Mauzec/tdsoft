@@ -22,6 +22,8 @@ func main() {
 	cl, err := client.NewClient()
 	r.PutService(cl)
 
+	r.PutService(w)
+
 	w.SetOnClosed(func() {
 		if cl != nil {
 			_ = cl.StopCreatorServer()
@@ -41,7 +43,7 @@ func main() {
 	if err != nil {
 		r.Show(ui.ScreenLogin)
 	} else {
-		r.ShowWith(ui.ScreenTODO, "Main Screen")
+		r.Show(ui.ScreenMain)
 	}
 
 	w.ShowAndRun()

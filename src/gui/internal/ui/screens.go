@@ -134,7 +134,7 @@ func loginScreen(r *Router) fyne.CanvasObject {
 				return
 			}
 
-			r.ShowWith(ScreenTODO, "Main Screen")
+			r.Show(ScreenMain)
 
 		case 3:
 			if passwordEntry.Text == "" {
@@ -155,7 +155,7 @@ func loginScreen(r *Router) fyne.CanvasObject {
 				return
 			}
 
-			r.ShowWith(ScreenTODO, "Main Screen")
+			r.Show(ScreenMain)
 		}
 	}
 

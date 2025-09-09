@@ -10,9 +10,15 @@ import regex as re
 from enum import Enum, auto
 from urllib.parse import urlparse, ParseResult
 from typing import TextIO
-
+import json
 
 # MAX_FLOOD_WAIT = 300
+
+def fail(code: str, message: str, **details):
+    obj = {'error': {'code': code, 'message': message, 'details': details or None}}
+    sys.stderr.write(json.dumps(obj) + '\n')
+    sys.stderr.flush()
+    sys.exit(1)
 
 def flush_and_sync(f: TextIO) -> None:
     try:

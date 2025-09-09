@@ -21,11 +21,11 @@ def parse_args() -> argparse.Namespace:
         "chat", help="username, t.me/username, invite link(not supported yet)"
     )
     p.add_argument('--limit', type=int, default=1000, 
-                   help='maximum number of members to retrieve; default is 1000; (MAX: 50000)')
+                   help='maximum number of members to return (default is 1000, max is 50000)')
     
     p.add_argument(
         "--output", type=str, 
-        help="output csv file path; default is get-members-<time>.csv")
+        help="output csv file path; default is get-members-<timestamp>.csv")
     
     p.add_argument(
         "--parse-from-messages", action='store_true',
@@ -33,11 +33,6 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--messages-limit", type=int, default=10,
                    help="number of messages to parse from, default 10; (MAX 5000)")
 
-    # not supported 
-    p.add_argument('--full-users', type=int, help='''
-                   (EXPENSIVE OPERATION) expand user information 
-                   (bio, blocked, premium, premium_gifts and etc);''')
-    
     # TODO
     p.add_argument(
         '--exclude-bots', action='store_true', help='exclude bots from the output'

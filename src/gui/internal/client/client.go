@@ -1,7 +1,6 @@
 package client
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -21,7 +20,7 @@ type Client struct {
 
 	NeedAuth bool
 
-	cmd *exec.Cmd
+	creatorCmd *exec.Cmd
 }
 
 func NewClient() (*Client, error) {
@@ -46,11 +45,18 @@ func (cl *Client) DeleteSession() {
 	os.Remove("../test_session.session")
 }
 
+func (cl *Client) SaveAPIConfig() error {
+	cfg := config.TGAPIConfig{
+		APIID:   cl.APIID,
+		APIHash: cl.APIHash,
+	}
+	return config.SaveConfig(cfg, "tg_auth", "env")
+}
+
 // TODO: move host and port to config
 
 func (cl *Client) StartCreatorServer() error {
-	ctx := context.Background()
-	cmd := exec.CommandContext(ctx, "../../.venv/bin/python3", "../connect.py")
+	cmd := exec.Command("../../.venv/bin/python3", "../connect.py")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	logf, _ := os.OpenFile("creator_server.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	cmd.Stdout = logf
@@ -58,7 +64,7 @@ func (cl *Client) StartCreatorServer() error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	cl.cmd = cmd
+	cl.creatorCmd = cmd
 
 	// TODO: move waiting to config or do it dynamic
 	time.Sleep(250 * time.Millisecond)
@@ -68,6 +74,9 @@ func (cl *Client) StartCreatorServer() error {
 }
 
 func (cl *Client) StopCreatorServer() error {
+	if cl.creatorCmd == nil {
+		return nil
+	}
 	if err := cl.pingCreatorServer(); err == nil {
 		resp, err := http.Get("http://127.0.0.1:9001/shutdown")
 		if err == nil {
@@ -75,21 +84,22 @@ func (cl *Client) StopCreatorServer() error {
 		}
 	}
 
-	if cl.cmd == nil || cl.cmd.Process == nil {
+	if cl.creatorCmd.Process == nil {
 		return nil
 	}
 
-	if cl.cmd.ProcessState == nil || !cl.cmd.ProcessState.Exited() {
+	if cl.creatorCmd.ProcessState == nil || !cl.creatorCmd.ProcessState.Exited() {
 		done := make(chan error, 1)
-		go func() { done <- cl.cmd.Wait() }()
+		go func() { done <- cl.creatorCmd.Wait() }()
 		select {
 		case <-done:
 		case <-time.After(3 * time.Second):
-			_ = cl.cmd.Process.Kill()
+			_ = cl.creatorCmd.Process.Kill()
 			<-done
 		}
 	}
 
+	cl.creatorCmd = nil
 	return nil
 }
 
@@ -199,16 +209,8 @@ func (cl *Client) pingCreatorServer() error {
 	return nil
 }
 
-func (cl *Client) SaveAPIConfig() error {
-	cfg := config.TGAPIConfig{
-		APIID:   cl.APIID,
-		APIHash: cl.APIHash,
-	}
-	return config.SaveConfig(cfg, "tg_auth", "env")
-}
-
-func (cl *Client) SetEmpty() {
-	cl.APIID = ""
-	cl.APIHash = ""
-	cl.NeedAuth = true
-}
+// func (cl *Client) SetEmpty() {
+// 	cl.APIID = ""
+// 	cl.APIHash = ""
+// 	cl.NeedAuth = true
+// }

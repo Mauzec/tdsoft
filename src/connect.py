@@ -18,6 +18,10 @@ sent_code_data: Optional[uvicorn.Server] = None
 @app.get('/ping')
 async def ping(message: str = 'ping'):
     return {'message': 'pong' if message == 'ping' else 'saimon'}
+
+# todo
+# @app.get("/auth_status")
+
     
 @app.get('/api_data')
 async def api_data(api_id: str, api_hash: str):
