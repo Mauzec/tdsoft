@@ -15,6 +15,9 @@ const (
 	ScreenMain ScreenID = "main"
 )
 
+// parserMembersMenu is the UI for parsing members. It is the part of mainScreen.
+//
+//	Services: *client.Client
 func parserMembersMenu(r *Router) fyne.CanvasObject {
 	var cl *client.Client
 	_ = r.GetServiceAs(&cl)
@@ -94,13 +97,16 @@ func parserMembersMenu(r *Router) fyne.CanvasObject {
 				limitMembersEntry),
 		),
 		container.NewBorder(nil, nil, outputLabel, nil, outputEntry),
-		container.NewBorder(nil, nil, parseFromMessagesCheck, limitMessagesEntry),
+		container.NewBorder(nil, nil, parseFromMessagesCheck, nil, limitMessagesEntry),
 		parseBioCheck,
 		addInfoCheck,
 		parseButton,
 	)
 }
 
+// mainScreen is the main application screen, that shows after login.
+//
+//	Services: *client.Client, fyne.Window
 func mainScreen(r *Router) fyne.CanvasObject {
 	var w fyne.Window
 	_ = r.GetServiceAs(&w)
@@ -128,8 +134,34 @@ func mainScreen(r *Router) fyne.CanvasObject {
 		layout.NewSpacer(),
 	)
 
-	return container.NewVBox(
-		menu,
-		content,
+	const maxLogEntries = 500
+
+	logContainer := container.NewVBox()
+	logScroll := container.NewVScroll(logContainer)
+	logScroll.SetMinSize(fyne.NewSize(0, 180))
+
+	addLog := func(s string) {
+		label := widget.NewRichTextWithText(s)
+		label.Wrapping = fyne.TextWrapWord
+		if len(logContainer.Objects) >= maxLogEntries {
+			// TODO: if log amount is a lot, need optimization here
+			logContainer.Objects = logContainer.Objects[1:]
+		}
+
+		logContainer.Add(label)
+		logScroll.ScrollToBottom()
+	}
+
+	cl.SetUserLogger(addLog)
+
+	return container.NewBorder(
+		menu, nil, nil, nil,
+		container.NewBorder(
+			container.NewVBox(
+				content,
+				widget.NewSeparator(),
+			), nil, nil, nil,
+			logScroll,
+		),
 	)
 }

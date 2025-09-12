@@ -81,15 +81,15 @@ func runPyWithStreaming(args []string, onOut func(string, *PyMsg), onErr func(*P
 	<-errDone
 	err = <-waitErr
 
-	if err != nil {
-		onErr(&PyMsg{
-			Code:    "UNCAUGHT_ERROR",
-			Message: "Uncaught error from script",
-			Details: map[string]any{
-				"error": err.Error(),
-			},
-		})
-	}
+	// if err != nil {
+	// 	onErr(&PyMsg{
+	// 		Code:    "UNCAUGHT_ERROR",
+	// 		Message: "Uncaught error from script",
+	// 		Details: map[string]any{
+	// 			"error": err.Error(),
+	// 		},
+	// 	})
+	// }
 
-	return err
+	return nil
 }

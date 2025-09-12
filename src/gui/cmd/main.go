@@ -9,6 +9,8 @@ import (
 	"fyne.io/fyne/v2/app"
 	"github.com/mauzec/tdsoftgui/internal/client"
 	"github.com/mauzec/tdsoftgui/internal/ui"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 func main() {
@@ -19,7 +21,26 @@ func main() {
 	r := ui.NewRouter(w)
 	ui.RegisterDefaultScreens(r)
 
-	cl, err := client.NewClient()
+	loggerConfig := zap.Config{
+		Level:       zap.NewAtomicLevelAt(zapcore.DebugLevel),
+		Development: false,
+		Encoding:    "console",
+		EncoderConfig: zapcore.EncoderConfig{
+			TimeKey:      "T",
+			LevelKey:     "L",
+			MessageKey:   "M",
+			CallerKey:    "C",
+			EncodeTime:   zapcore.ISO8601TimeEncoder,
+			EncodeLevel:  zapcore.CapitalColorLevelEncoder,
+			EncodeCaller: zapcore.ShortCallerEncoder,
+			LineEnding:   zapcore.DefaultLineEnding,
+		},
+		OutputPaths:      []string{"stdout", "tdsoft.log"},
+		ErrorOutputPaths: []string{"stderr", "tdsoft.log"},
+	}
+	logger, _ := loggerConfig.Build()
+
+	cl, err := client.NewClient(logger)
 	r.PutService(cl)
 
 	r.PutService(w)
@@ -28,6 +49,7 @@ func main() {
 		if cl != nil {
 			_ = cl.StopCreatorServer()
 		}
+		logger.Sync()
 	})
 
 	sigCh := make(chan os.Signal, 1)
@@ -37,6 +59,7 @@ func main() {
 		if cl != nil {
 			_ = cl.StopCreatorServer()
 		}
+		logger.Sync()
 		os.Exit(0)
 	}()
 

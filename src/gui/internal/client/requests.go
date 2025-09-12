@@ -4,37 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"go.uber.org/zap"
 )
 
 // TODO: add specific messages about errors/info that can be handled in UI
 
 type OutHandler func(string, *PyMsg)
 type ErrHandler func(*PyMsg)
-
-var DefaultOutHandlers = map[string]OutHandler{
-	"FLOOD_WAIT": func(t string, pm *PyMsg) {
-		fmt.Printf("[%s] flood wait: %s seconds\n",
-			t, pm.Details["seconds"])
-	},
-	"CSV_FLUSH_ERROR": func(t string, pm *PyMsg) {
-		fmt.Printf("[%s] %s\n", t, pm.Message)
-	},
-}
-var DefaultErrHandlers = map[string]ErrHandler{
-	"UNCAUGHT_ERROR": func(pm *PyMsg) {
-		fmt.Printf("[ERROR] uncaught error: %s\n", pm.Details["error"])
-	},
-	"TASK_CANCELLED": func(pm *PyMsg) {
-		fmt.Printf("[ERROR] task cancelled: %s\n", pm.Details["message"])
-	},
-	"RPC_ERROR": func(pm *PyMsg) {
-		fmt.Printf("[ERROR] rpc error: {code: %v, message: %v}\n",
-			pm.Details["code"], pm.Details["message"])
-	},
-	"UNEXPECTED_ERROR": func(pm *PyMsg) {
-		fmt.Printf("[ERROR] unexpected error: %s\n", pm.Details["error"])
-	},
-}
 
 func ComposeOnOut(base, extra map[string]OutHandler) OutHandler {
 	return func(t string, env *PyMsg) {
@@ -136,6 +113,9 @@ func (req *GetMembersRequest) Validate() error {
 
 // GetMembers get members of a group/channel if possible
 func (cl *Client) GetMembers(req *GetMembersRequest) error {
+	if cl.userLogF == nil {
+		return errors.New("no user log function set")
+	}
 	if err := req.Validate(); err != nil {
 		return err
 	}
@@ -164,37 +144,52 @@ func (cl *Client) GetMembers(req *GetMembersRequest) error {
 
 	extraOut := map[string]OutHandler{
 		"MEMBERS_FETCHED": func(t string, pm *PyMsg) {
-			fmt.Printf("[%s] fetched %v members\n",
-				t, pm.Details["total"])
+			cl.extLog.Info("fetched members",
+				zap.Any("details", pm.Details))
+			cl.UserLog(1,
+				fmt.Sprintf("fetched %v members", pm.Details["total"]))
+
 		},
 		"MEMBERS_FROM_MESSAGES_FETCHED": func(t string, pm *PyMsg) {
-			fmt.Printf("[%s] fetched %v members from messages\n",
-				t, pm.Details["total"])
+			cl.extLog.Info("fetched members from messages",
+				zap.Any("details", pm.Details))
+			cl.UserLog(1,
+				fmt.Sprintf("fetched %v members from messages",
+					pm.Details["total"]))
+
 		},
 		"ALL_DONE": func(t string, pm *PyMsg) {
-			fmt.Printf("[%s] all done, unique users total: %v\n",
-				t, pm.Details["total"])
+			cl.extLog.Info("all done", zap.Any("details", pm.Details))
+			cl.UserLog(1, "all done")
+
 		},
 	}
 	extraErr := map[string]ErrHandler{
 		"MEMBERS_LIMIT_TOO_HIGH": func(pm *PyMsg) {
-			fmt.Printf("[ERROR] limit too high, got %v, max is %v\n",
-				pm.Details["limit"], pm.Details["max"])
+			cl.extLog.Error("limit too high",
+				zap.Any("details", pm.Details))
+			cl.UserLog(3, fmt.Sprintf("limit too high, got %v, max is %v",
+				pm.Details["limit"], pm.Details["max"]))
 		},
 		"MESSAGE_LIMIT_TOO_HIGH": func(pm *PyMsg) {
-			fmt.Printf("[ERROR] messages limit too high, got %v, max is %v\n",
-				pm.Details["limit"], pm.Details["max"])
+			cl.extLog.Error("messages limit too high",
+				zap.Any("details", pm.Details))
+			cl.UserLog(3, fmt.Sprintf("messages limit too high, got %v, max is %v",
+				pm.Details["limit"], pm.Details["max"]))
 		},
 		"INVALID_CHAT_NAME": func(pm *PyMsg) {
-			fmt.Printf("[ERROR] invalid chat name: %s\n",
-				pm.Details["name"])
+			cl.extLog.Error("invalid chat name",
+				zap.Any("details", pm.Details))
+			cl.UserLog(3, fmt.Sprintf("invalid chat name: %s",
+				pm.Details["name"]))
 		},
 		"INVITE_LINK_NOT_SUPPORTED": func(pm *PyMsg) {
-			fmt.Printf("[ERROR] invite link not supported yet\n")
+			cl.extLog.Error("invite link not supported yet")
+			cl.UserLog(3, "invite link not supported yet")
 		},
 	}
-	onOut := ComposeOnOut(DefaultOutHandlers, extraOut)
-	onErr := ComposeOnErr(DefaultErrHandlers, extraErr)
+	onOut := ComposeOnOut(cl.defaultPyOutHandlers, extraOut)
+	onErr := ComposeOnErr(cl.defaultPyErrHandlers, extraErr)
 
 	if err := runPyWithStreaming(args, onOut, onErr); err != nil {
 		return err

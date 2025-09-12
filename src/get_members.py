@@ -8,11 +8,11 @@ from config.config import get_tdlib_options
 from utils.chatname import parse_chat_name, ChatNameKind
 from pyrogram import Client, errors, types, enums
 from typing import AsyncGenerator, TextIO
-from utils.io import flood_wait_or_exit, exit_on_rpc
+import utils.io as io
 
 
 # TODO: need to do something with flood_wait (add, ex, retry button in ui )
-
+# TODO: add more errors, like chat not found, instead of just rpc error
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="get public members of a TG chat")
@@ -51,6 +51,12 @@ def parse_args() -> argparse.Namespace:
     # not supported yet
     p.add_argument(
         '--auto-join', action='store_true', help='automatically join the chat if not a member')
+    
+    # TODO: implement it, this useful for large groups and when no need parse all
+    # p.add_argument(
+    #     '--members-filter',
+    # )
+    
     return p.parse_args()
     
 
@@ -82,6 +88,7 @@ def write_row(writer: csv.DictWriter, u: types.User,
     
     writer.writerow(row)
     
+    
 def get_additional_info(u: types.User) -> List[str]:
     info = []
     info.append('premium' if u.is_premium else 'not premium')
@@ -91,14 +98,21 @@ def get_additional_info(u: types.User) -> List[str]:
     info.append(u.phone_number or '')
     return info
     
-async def fetch_bio(u: types.User, app: Client) -> str:
-    try:
-        chat: types.Chat = await app.get_chat(u.id)
-        return chat.bio or ''
-    except errors.RPCError as e:
-        exit_on_rpc(e, sys.stderr)
-    return ''
-        
+async def fetch_bio(csvf: TextIO, u: types.User, app: Client) -> str:
+    chat: types.Chat|None = None
+    while chat is None:
+        try:
+            chat = await app.get_chat(u.id)
+        except errors.FloodWait as e:
+            await io.flood_wait_or_exit(int(getattr(e, 'value', 0)), csvf)
+            chat = None
+        except errors.RPCError as e:
+            io.exit_on_rpc(e, csvf, 'got rpc error while fetching bio')
+        except Exception as e:
+            io.message(csvf, 'error', 'UNEXPECTED_ERROR',
+                       'got unexpected error while fetching bio', error=str(e))
+    
+    return chat.bio or ''
 
 async def fetch_members(
     app: Client,
@@ -112,7 +126,6 @@ async def fetch_members(
     users: Dict[int, types.User] = {}
     
     chat = await app.get_chat(name)
-    chat_type = chat.type
     
     total = 0
     with open(args.output, 'a', newline='', encoding='utf-8') as f:
@@ -130,7 +143,7 @@ async def fetch_members(
                     bio: str|None = None
                     if args.parse_bio:
                         if not u.is_bot:
-                            bio = await fetch_bio(u, app)
+                            bio = await fetch_bio(f, u, app)
                         else:
                             bio = ''
 
@@ -138,25 +151,30 @@ async def fetch_members(
                     if args.add_additional_info:
                         additional_info = get_additional_info(u)
                     
-                    write_row(writer, u, is_member, bio, additional_info)                    
+                    write_row(writer, u, is_member, bio, additional_info)
+                    io.CSV_FLUSHED = False                 
                     
                     total += 1
                     users[int(u.id)] = u
                 return None
             
-            except errors.FloodWait as e:
-                value = int(getattr(e, 'value', 0))
-                await flood_wait_or_exit(value, f, f'parsed {total} members so far, saved to {args.output}')
-                  
+            # if we get flood wait, we can't wait, because 
+            # there is no offset parameters in get_chat_members
+            # except errors.FloodWait as e:
+            #     value = int(getattr(e, 'value', 0))
+            #     await io.flood_wait_or_exit(value, f)
             except errors.RPCError as e:
-                exit_on_rpc(e, f)
+                io.exit_on_rpc(e, f, 'got rpc error while fetching members')
+            except Exception as e:
+                io.message(f, 'error', 'UNEXPECTED_ERROR',
+                           'got unexpected error while fetching members', error=str(e))
+        
         await _write_members()
-        print(f'parsed {total} members, saved to {args.output}', file=sys.stderr)
+        io.message(None, 'info', 'MEMBERS_FETCHED', 'finished fetching members', total=total)
 
     return users
         
-    
-# TODO: add 
+
 async def fetch_members_from_messages(
     app: Client,
     name: str,
@@ -194,47 +212,63 @@ async def fetch_members_from_messages(
 
                         if int(u.id) in users:
                             continue
-
-                        users[int(u.id)] = u
                         
                         member: types.ChatMember = await app.get_chat_member(name, u.id)
                         is_member = status_is_member(member.status)
+                        
+                        bio: str|None = None
+                        if args.parse_bio:
+                            if not u.is_bot:
+                                bio = await fetch_bio(f, u, app)
+                            else:
+                                bio = ''
 
-                        write_row(writer, u, is_member)
+                        additional_info: List[str]|None = None
+                        if args.add_additional_info:
+                            additional_info = get_additional_info(u)
+                        
+                        write_row(writer, u, is_member, bio, additional_info)
+                        io.CSV_FLUSHED = False  
+                        
+                        users[int(u.id)] = u
                         total_messages += 1
                         last_msg_id = m.id
                         curr_messages += 1
 
                         if total_messages >= args.messages_limit:
                             break
-                    
-                except errors.RPCError as e:
-                    exit_on_rpc(e, f)
+                        
                 except errors.FloodWait as e:
                     value = int(getattr(e, 'value', 0))
-                    await flood_wait_or_exit(value, f, f'parsed {total_messages} messages so far, saved to {args.output}')
+                    await io.flood_wait_or_exit(value, f)
+                except errors.RPCError as e:
+                    io.exit_on_rpc(e, f, 'got rpc error while fetching members from messages')
+                except Exception as e:
+                    io.message(f, 'error', 'UNEXPECTED_ERROR',
+                               'got unexpected error while fetch members from',
+                               error=str(e))
                 
                 if curr_messages == 0 or last_msg_id is None or last_msg_id <= 1:
-                    print(f'no more messages to parse, stopping', file=sys.stderr)
                     break
+                
                 offset_id = last_msg_id
                 
         await _write_members_from_messages()
-        
-        print(f'parsed {total_messages} messages, saved to {args.output}', file=sys.stderr)
-        print(f'total unique users found: {len(users)}', file=sys.stderr)
+        io.message(None, 'info', 'MEMBERS_FROM_MESSAGES_FETCHED', 
+                   'finished fetching members from messages',
+                   total=total_messages)
     return None
     
 
 async def main():
     args = parse_args()
     if args.limit > 50000:
-        print(f'limit too high: {args.limit}, maximum is 50000', file=sys.stderr)
-        sys.exit(1)
+        io.message(None, 'error', 'MEMBERS_LIMIT_TOO_HIGH', 'members limit too high', 
+                limit=args.limit, max=50000)
     
-    if args.parse_from_messages and args.messages_limit > 10000:
-        print(f'messages limit too high: {args.messages_limit}, maximum is 10000', file=sys.stderr)
-        sys.exit(1)    
+    if args.parse_from_messages and args.messages_limit > 5000:
+        io.message(None, 'error', 'MESSAGE_LIMIT_TOO_HIGH', 'messages limit too high', 
+                limit=args.messages_limit, max=5000)
     
     if not args.output:
         args.output = f'get-members-{int(time.time())}.csv'
@@ -245,11 +279,12 @@ async def main():
     
     kind, name = parse_chat_name(args.chat)
     if kind == ChatNameKind.EMPTY:
-        print(f'invalid chat name: {args.chat}', file=sys.stderr)
-        sys.exit(1)
+        io.message(None, 'error', 'INVALID_CHAT_NAME', 
+                'invalid chat name', name=args.chat)
+
     if kind == ChatNameKind.INVITE_LINK:
-        print(f'invite links are not supported yet: {args.chat}', file=sys.stderr)
-        sys.exit(1)
+        io.message(None, 'error', 'INVITE_LINK_NOT_SUPPORTED', 
+                'invite links are not supported yet', name=args.chat)
         
     columns = ['user_id', 'username', 'first_name', 'last_name', 'is_member', 'is_bot']
     if args.parse_bio:
@@ -266,7 +301,12 @@ async def main():
         if args.parse_from_messages:
             await fetch_members_from_messages(app, name, args, users)
     
+        io.message(None, 'info', 'ALL_DONE', 'all done', total=len(users)) 
         
         
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        io.message(None, 'error', 'UNEXPECTED_ERROR', 
+                   'got unexpected error in main', error=str(e))

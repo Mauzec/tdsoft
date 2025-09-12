@@ -25,6 +25,9 @@ func RegisterDefaultScreens(r *Router) {
 
 }
 
+// loginScreen is the screen for logging in.
+//
+//	Services: *client.Client
 func loginScreen(r *Router) fyne.CanvasObject {
 	var cl *client.Client
 	_ = r.GetServiceAs(&cl)

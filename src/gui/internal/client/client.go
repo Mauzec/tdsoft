@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mauzec/tdsoftgui/internal/config"
+	"go.uber.org/zap"
 )
 
 type Client struct {
@@ -21,13 +23,52 @@ type Client struct {
 	NeedAuth bool
 
 	creatorCmd *exec.Cmd
+
+	userLogF func(string)
+	extLog   *zap.Logger
+
+	defaultPyOutHandlers map[string]OutHandler
+	defaultPyErrHandlers map[string]ErrHandler
 }
 
-func NewClient() (*Client, error) {
+func NewClient(externalLogger *zap.Logger) (*Client, error) {
 	cl := &Client{}
+	var err error
+
+	if externalLogger == nil {
+		return cl, errors.New("no logger provided")
+	}
+	cl.extLog = externalLogger
+
+	cl.defaultPyOutHandlers = map[string]OutHandler{
+		"FLOOD_WAIT": func(t string, pm *PyMsg) {
+			fmt.Printf("[%s] flood wait: %s seconds\n",
+				t, pm.Details["seconds"])
+		},
+		"CSV_FLUSH_ERROR": func(t string, pm *PyMsg) {
+			fmt.Printf("[%s] %s\n", t, pm.Message)
+		},
+	}
+	cl.defaultPyErrHandlers = map[string]ErrHandler{
+		"UNCAUGHT_ERROR": func(pm *PyMsg) {
+			fmt.Printf("[ERROR] uncaught error: %s\n", pm.Details["error"])
+		},
+		"TASK_CANCELLED": func(pm *PyMsg) {
+			fmt.Printf("[ERROR] task cancelled: %s\n", pm.Details["message"])
+		},
+		"RPC_ERROR": func(pm *PyMsg) {
+			fmt.Printf("[ERROR] rpc error: {code: %v, message: %v, id: %v}\n",
+				pm.Details["c"], pm.Details["m"], pm.Details["id"])
+		},
+		"UNEXPECTED_ERROR": func(pm *PyMsg) {
+			fmt.Printf("[ERROR] %s:%s\n", pm.Message, pm.Details["error"])
+		},
+	}
+
 	cfg, err := config.LoadConfig[config.TGAPIConfig]("tg_auth", "env", ".")
 	if err != nil {
-		log.Println("no api config; deleting previouse session if exists")
+		cl.extLog.Warn("no api config; deleting previous session if exists", zap.Error(err))
+
 		err = ErrNeedAuth
 		cl.NeedAuth = true
 		os.Remove("tg_auth.env")
@@ -205,6 +246,27 @@ func (cl *Client) pingCreatorServer() error {
 	json.NewDecoder(resp.Body).Decode(&res)
 	if res["message"] != "pong" {
 		return ErrCreatorPingError
+	}
+	return nil
+}
+
+func (cl *Client) SetUserLogger(f func(string)) {
+	cl.userLogF = f
+}
+
+// 1 - info, 2 - warn, 3 - error
+func (cl *Client) UserLog(level int, msg string) error {
+	if cl.userLogF == nil {
+		return errors.New("no user log function set")
+	}
+
+	switch level {
+	case 2:
+		cl.userLogF("Warning! " + msg)
+	case 3:
+		cl.userLogF("Error! " + msg)
+	default:
+		cl.userLogF(msg)
 	}
 	return nil
 }
