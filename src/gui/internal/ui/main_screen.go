@@ -134,25 +134,31 @@ func mainScreen(r *Router) fyne.CanvasObject {
 		layout.NewSpacer(),
 	)
 
-	const maxLogEntries = 500
+	logGrid := NewLogGrid(widget.TextGridStyleDefault)
+	logScroll := container.NewVScroll(logGrid.Grid)
+	cl.SetUserLogger(func(s string) {
+		fyne.Do(func() {
+			logGrid.AppendLine(s)
+			logScroll.ScrollToBottom()
+		})
+	})
 
-	logContainer := container.NewVBox()
-	logScroll := container.NewVScroll(logContainer)
-	logScroll.SetMinSize(fyne.NewSize(0, 180))
+	// logContainer := container.NewVBox()
+	// logScroll := container.NewVScroll(logContainer)
+	// logScroll.SetMinSize(fyne.NewSize(0, 180))
 
-	addLog := func(s string) {
-		label := widget.NewRichTextWithText(s)
-		label.Wrapping = fyne.TextWrapWord
-		if len(logContainer.Objects) >= maxLogEntries {
-			// TODO: if log amount is a lot, need optimization here
-			logContainer.Objects = logContainer.Objects[1:]
-		}
+	// addLog := func(s string) {
+	// 	label := widget.NewRichTextWithText(s)
+	// 	label.Wrapping = fyne.TextWrapWord
+	// 	if len(logContainer.Objects) >= maxLogEntries {
+	// 		// TODO: if log amount is a lot, need optimization here
+	// 		logContainer.Objects = logContainer.Objects[1:]
+	// 	}
 
-		logContainer.Add(label)
-		logScroll.ScrollToBottom()
-	}
-
-	cl.SetUserLogger(addLog)
+	// 	logContainer.Add(label)
+	// 	logScroll.ScrollToBottom()
+	// }
+	// cl.SetUserLogger(addLog)
 
 	return container.NewBorder(
 		menu, nil, nil, nil,
