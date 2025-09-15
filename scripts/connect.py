@@ -6,11 +6,14 @@ from typing import Optional
 from pyrogram import raw
 from os import system
 import uvicorn
+import os
+
+# TODO: add reading host, port from cfg
 
 app = FastAPI()
 server = None
 
-SESSION_NAME = 'test_session'
+SESSION = os.path.join(os.getcwd(), "test_account")
 
 client: Optional[Client] = None
 sent_code_data: Optional[uvicorn.Server] = None
@@ -26,7 +29,7 @@ async def ping(message: str = 'ping'):
 @app.get('/api_data')
 async def api_data(api_id: str, api_hash: str):
     global client
-    client = Client(SESSION_NAME, api_id, api_hash)
+    client = Client(SESSION, api_id, api_hash)
     try:
         await client.connect()
     except Exception as e:
@@ -109,7 +112,7 @@ async def remove_session():
         error += f'delete error: {str(e)}; '
         
     # just in case
-    system(f'rm -f {SESSION_NAME}.session')
+    system(f'rm -f {SESSION}.session')
     
     if error:
         return {'message': 'session removed', 'error': error}

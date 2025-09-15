@@ -16,9 +16,9 @@ import json
 
 CSV_FLUSHED = False
 
-def message(csvf: TextIO|None, type: str, code: str, message: str, **details):
+def message(csvf: TextIO|None, msg_type: str, code: str, **details):
     '''
-    this method calls flush on csv file every time if csvf is not None
+    !!! this method calls flush on csv file every time if csvf is not None
     
     if you want to disable this behavior, pass None as csvf
     '''
@@ -26,15 +26,15 @@ def message(csvf: TextIO|None, type: str, code: str, message: str, **details):
     
     global CSV_FLUSHED
     obj: Dict[str, Any] = {}
-    obj = {'code': code, 'message': message, 'details': details or None}
+    obj = {'code': code, 'details': details or None}
     ret: Dict[str, Dict[str, Any]] = {}
     out = sys.stdout
-    if type[0] == 'e':
+    if msg_type[0] == 'e':
         ret = {'error': obj}
         out = sys.stderr
-    elif type[0] == 'w':
+    elif msg_type[0] == 'w':
         ret = {'warn': obj}
-    elif type[0] == 'i':
+    elif msg_type[0] == 'i':
         ret = {'info': obj}
     else:
         ret = {'log': obj}
@@ -47,15 +47,14 @@ def message(csvf: TextIO|None, type: str, code: str, message: str, **details):
         except OSError as e:
             sys.stdout.write(json.dumps({'warn': 
                 {'code': 'CSV_FLUSH_ERROR', 
-                'message': 'something went wrong when flushing',
                 'details': None}}) + '\n')
             sys.stdout.flush()
         CSV_FLUSHED = True
-    if type[0] == 'e':
+    if msg_type[0] == 'e':
         sys.exit(1)
 
-async def flood_wait_or_exit(value: int, csvf: TextIO) -> None:
-    message(csvf, 'warn', 'FLOOD_WAIT', 'got flood wait', value=value)
+async def flood_wait_or_exit(csvf: TextIO, value: int, when:str) -> None:
+    message(csvf, 'warn', 'FLOOD_WAIT', when=when, value=value)
     
     # if value > MAX_FLOOD_WAIT:
     #     print(f'flood wait too long ({value} seconds), stopping', file=sys.stderr)
@@ -65,7 +64,7 @@ async def flood_wait_or_exit(value: int, csvf: TextIO) -> None:
     try:
         await asyncio.sleep(value + 1)
     except asyncio.CancelledError:
-        message(None, 'error', 'TASK_CANCELLED', 'task cancelled during wait, try again')
+        message(None, 'error', 'TASK_CANCELLED', when='flood_wait_or_exit')
         
-def exit_on_rpc(e: errors.RPCError, csvf: TextIO, msg: str) -> None:
-    message(csvf,'error', 'RPC_ERROR', msg, c=e.CODE, m=e.MESSAGE, id=e.ID)
+def exit_on_rpc(csvf: TextIO, e: errors.RPCError, when: str) -> None:
+    message(csvf,'error', 'RPC_ERROR', when=when, c=e.CODE, m=e.MESSAGE, id=e.ID)

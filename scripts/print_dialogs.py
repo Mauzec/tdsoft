@@ -2,8 +2,11 @@ import argparse
 import asyncio
 from typing import Optional, List, Tuple, Any, Dict
 from config.config import get_tdlib_options
+import os
 
 from pyrogram import Client, errors, types, enums
+
+SESSION = os.path.join(os.getcwd(), "test_account")
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Print dialogs to find chat ids")
@@ -18,7 +21,7 @@ async def main():
     api_hash: str = options["api_hash"]    
 
     dialogs: List[types.Dialog] = []
-    async with Client('my_account', api_id, api_hash) as cl:
+    async with Client(SESSION, api_id, api_hash) as cl:
         async for d in cl.get_dialogs(limit=args.limit):
             dialogs.append(d)
     

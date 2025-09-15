@@ -46,7 +46,7 @@ func (r *Router) Register(id ScreenID, f ScreenFactory) {
 func (r *Router) Show(id ScreenID) {
 	f, ok := r.factories[id]
 	if !ok {
-		log.Printf("Trying to show ScreenID %s, but not registered", id)
+		log.Printf("trying to show ScreenID %s, but not registered", id)
 		return
 	}
 

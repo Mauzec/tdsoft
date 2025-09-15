@@ -3,6 +3,7 @@ import csv
 import argparse
 import asyncio
 import time
+import os
 from typing import Optional, List, Tuple, Any, Dict, Set
 from config.config import get_tdlib_options
 from utils.chatname import parse_chat_name, ChatNameKind
@@ -10,9 +11,11 @@ from pyrogram import Client, errors, types, enums
 from typing import AsyncGenerator, TextIO
 import utils.io as io
 
+SESSION = os.path.join(os.getcwd(), "test_account")
 
 # TODO: need to do something with flood_wait (add, ex, retry button in ui )
 # TODO: add more errors, like chat not found, instead of just rpc error
+# TODO: add check if messsage is service or not, or it's from group/channel or user
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="get public members of a TG chat")
@@ -50,7 +53,8 @@ def parse_args() -> argparse.Namespace:
 
     # not supported yet
     p.add_argument(
-        '--auto-join', action='store_true', help='automatically join the chat if not a member')
+        '--auto-join', action='store_true', help='automatically join the chat if not a member',
+    )
     
     # TODO: implement it, this useful for large groups and when no need parse all
     # p.add_argument(
@@ -104,13 +108,13 @@ async def fetch_bio(csvf: TextIO, u: types.User, app: Client) -> str:
         try:
             chat = await app.get_chat(u.id)
         except errors.FloodWait as e:
-            await io.flood_wait_or_exit(int(getattr(e, 'value', 0)), csvf)
+            await io.flood_wait_or_exit(csvf, int(getattr(e, 'value', 0)), 'fetching bio')
             chat = None
         except errors.RPCError as e:
-            io.exit_on_rpc(e, csvf, 'got rpc error while fetching bio')
+            io.exit_on_rpc(csvf, e, 'fetching bio')
         except Exception as e:
             io.message(csvf, 'error', 'UNEXPECTED_ERROR',
-                       'got unexpected error while fetching bio', error=str(e))
+                       when='fetching bio', error=str(e))
     
     return chat.bio or ''
 
@@ -156,22 +160,22 @@ async def fetch_members(
                     
                     total += 1
                     users[int(u.id)] = u
-                return None
             
             # if we get flood wait, we can't wait, because 
             # there is no offset parameters in get_chat_members
             # except errors.FloodWait as e:
             #     value = int(getattr(e, 'value', 0))
-            #     await io.flood_wait_or_exit(value, f)
+            #     await io.flood_wait_or_exit(f, value, 'fetching members')
             except errors.RPCError as e:
-                io.exit_on_rpc(e, f, 'got rpc error while fetching members')
+                io.exit_on_rpc(f, e, 'fetching members')
             except Exception as e:
                 io.message(f, 'error', 'UNEXPECTED_ERROR',
-                           'got unexpected error while fetching members', error=str(e))
+                           when='fetching members', error=str(e))
         
         await _write_members()
-        io.message(None, 'info', 'MEMBERS_FETCHED', 'finished fetching members', total=total)
-
+        io.message(None, 'info', 'MEMBERS_FETCHED', total=total)
+        
+    io.CSV_FLUSHED = True
     return users
         
 
@@ -186,7 +190,7 @@ async def fetch_members_from_messages(
         writer = csv.writer(f)
         
         # FIXME: change to 100 later
-        page_size = 50
+        page_size = 100
         
         offset_id = 0
         
@@ -239,13 +243,13 @@ async def fetch_members_from_messages(
                             break
                         
                 except errors.FloodWait as e:
-                    value = int(getattr(e, 'value', 0))
-                    await io.flood_wait_or_exit(value, f)
+                    await io.flood_wait_or_exit(f, int(getattr(e, 'value', 0)), 
+                                                'fetching members from messages')
                 except errors.RPCError as e:
-                    io.exit_on_rpc(e, f, 'got rpc error while fetching members from messages')
+                    io.exit_on_rpc(f, e, 'fetching members from messages')
                 except Exception as e:
                     io.message(f, 'error', 'UNEXPECTED_ERROR',
-                               'got unexpected error while fetch members from',
+                               when='fetching members from messages',
                                error=str(e))
                 
                 if curr_messages == 0 or last_msg_id is None or last_msg_id <= 1:
@@ -255,19 +259,24 @@ async def fetch_members_from_messages(
                 
         await _write_members_from_messages()
         io.message(None, 'info', 'MEMBERS_FROM_MESSAGES_FETCHED', 
-                   'finished fetching members from messages',
                    total=total_messages)
-    return None
+        
+    io.CSV_FLUSHED = True
     
 
 async def main():
-    args = parse_args()
+    io.message(None, 'info', 'SCRIPT_STARTED', script='get_members.py')
+    try:
+        args = parse_args()
+    except Exception as e:
+        io.message(None, 'error', "ARGPARSE_ERROR", error=str(e))
+        
     if args.limit > 50000:
-        io.message(None, 'error', 'MEMBERS_LIMIT_TOO_HIGH', 'members limit too high', 
+        io.message(None, 'error', 'MEMBERS_LIMIT_TOO_HIGH', 
                 limit=args.limit, max=50000)
     
     if args.parse_from_messages and args.messages_limit > 5000:
-        io.message(None, 'error', 'MESSAGE_LIMIT_TOO_HIGH', 'messages limit too high', 
+        io.message(None, 'error', 'MESSAGE_LIMIT_TOO_HIGH',
                 limit=args.messages_limit, max=5000)
     
     if not args.output:
@@ -279,12 +288,10 @@ async def main():
     
     kind, name = parse_chat_name(args.chat)
     if kind == ChatNameKind.EMPTY:
-        io.message(None, 'error', 'INVALID_CHAT_NAME', 
-                'invalid chat name', name=args.chat)
+        io.message(None, 'error', 'INVALID_CHAT_NAME', name=args.chat)
 
     if kind == ChatNameKind.INVITE_LINK:
-        io.message(None, 'error', 'INVITE_LINK_NOT_SUPPORTED', 
-                'invite links are not supported yet', name=args.chat)
+        io.message(None, 'error', 'INVITE_LINK_NOT_SUPPORTED', name=args.chat)
         
     columns = ['user_id', 'username', 'first_name', 'last_name', 'is_member', 'is_bot']
     if args.parse_bio:
@@ -294,14 +301,15 @@ async def main():
     with open(args.output, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         writer.writerow(columns)
+    io.CSV_FLUSHED = True
 
-    async with Client('my_account', api_id, api_hash) as app:
+    async with Client(SESSION, api_id, api_hash) as app:
         users: Dict[int, types.User] = await fetch_members(app, name, args)
     
         if args.parse_from_messages:
             await fetch_members_from_messages(app, name, args, users)
     
-        io.message(None, 'info', 'ALL_DONE', 'all done', total=len(users)) 
+        io.message(None, 'info', 'ALL_DONE', total=len(users), output=os.path.abspath(args.output))
         
         
 if __name__ == '__main__':
@@ -309,4 +317,4 @@ if __name__ == '__main__':
         asyncio.run(main())
     except Exception as e:
         io.message(None, 'error', 'UNEXPECTED_ERROR', 
-                   'got unexpected error in main', error=str(e))
+                   when='main', error=str(e))

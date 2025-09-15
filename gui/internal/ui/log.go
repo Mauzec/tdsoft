@@ -25,9 +25,10 @@ type LogGrid struct {
 }
 
 func NewLogGrid(style widget.TextGridStyle) *LogGrid {
-	// TODO: review flushEvery
+	// FIXME: ERROR: if log string widget is too long, fyne expands the window to the right.
 	grid := widget.NewTextGrid()
 	scroll := container.NewVScroll(grid)
+
 	lg := &LogGrid{
 		Grid:       grid,
 		Scroll:     scroll,
@@ -56,7 +57,7 @@ func (lg *LogGrid) start() {
 	}()
 }
 
-// flush transfer buffer to grid rows
+// flush transfers buffer to grid rows
 func (lg *LogGrid) flush() {
 	lg.mu.Lock()
 	if len(lg.buf) == 0 {
@@ -82,6 +83,7 @@ func (lg *LogGrid) flush() {
 		b := lg.isAtBottom()
 		lg.Grid.Rows = append(lg.Grid.Rows, rows...)
 		if len(lg.Grid.Rows) > lg.maxLines {
+			// TODO: optimize memory for large logs
 			lg.Grid.Rows = lg.Grid.Rows[len(lg.Grid.Rows)-lg.maxLines:]
 		}
 		lg.Grid.Refresh()
@@ -113,20 +115,19 @@ func (lg *LogGrid) Close() {
 	close(lg.stop)
 }
 
-func (lg *LogGrid) AppendLine(s string) {
-	row := widget.TextGridRow{
-		Cells: make([]widget.TextGridCell, 0, len(s)),
-	}
-	for _, r := range s {
-		row.Cells = append(row.Cells, widget.TextGridCell{Rune: r})
-	}
-	lg.Grid.Rows = append(lg.Grid.Rows, row)
-	if len(lg.Grid.Rows) > lg.maxLines {
-		// TODO: optimize memory for large logs
-		lg.Grid.Rows = lg.Grid.Rows[1:]
-	}
-
-}
+// func (lg *LogGrid) AppendLine(s string) {
+// 	row := widget.TextGridRow{
+// 		Cells: make([]widget.TextGridCell, 0, len(s)),
+// 	}
+// 	for _, r := range s {
+// 		row.Cells = append(row.Cells, widget.TextGridCell{Rune: r})
+// 	}
+// 	lg.Grid.Rows = append(lg.Grid.Rows, row)
+// 	if len(lg.Grid.Rows) > lg.maxLines {
+// 		// TODO: optimize memory for large logs
+// 		lg.Grid.Rows = lg.Grid.Rows[1:]
+// 	}
+// }
 
 func (lg *LogGrid) Clear() {
 	// TODO:

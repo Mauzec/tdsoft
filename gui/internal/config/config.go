@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"reflect"
 
+	"github.com/go-playground/validator/v10"
 	mapstructure "github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 	yaml "gopkg.in/yaml.v3"
@@ -20,13 +21,19 @@ type TGAPIConfig struct {
 	APIHash string `mapstructure:"API_HASH"`
 }
 
-const (
-	DefaultTgAuthConfigName = "tg_auth"
-	DefaultTgAuthConfigExt  = "env"
-)
+type AppConfig struct {
+	VenvPath       string `mapstructure:"venv_path" validate:"required"`
+	ScriptsPath    string `mapstructure:"scripts_path" validate:"required"`
+	Session        string `mapstructure:"session_name" validate:"required,filepath"`
+	AuthConfigName string `mapstructure:"auth_config_name" validate:"required"`
+	CreatorLogPath string `mapstructure:"creator_log_path" validate:"required,filepath"`
+	AppLogPath     string `mapstructure:"app_log_path" validate:"required,filepath"`
+	CreatorURI     string `mapstructure:"creator_uri" validate:"required,uri"`
+}
 
-func LoadConfig[T any](name, ext string, paths ...string) (T, error) {
-	var zero T
+func LoadConfig[T any](name, ext string, paths ...string) (*T, error) {
+
+	var zero *T
 
 	v := viper.New()
 	for _, p := range paths {
@@ -57,19 +64,24 @@ func LoadConfig[T any](name, ext string, paths ...string) (T, error) {
 		return zero, fmt.Errorf("failed to unmarshal config %s.%s into %T: %w", name, ext, cfg, err)
 	}
 
-	return cfg, nil
+	if err := validator.New(validator.WithRequiredStructEnabled()).
+		Struct(&cfg); err != nil {
+		return zero, fmt.Errorf("config %s.%s validation failed: %w", name, ext, err)
+	}
+
+	return &cfg, nil
 }
 
-func SaveConfig[T any](cfg T, name, ext string) error {
+func SaveConfig[T any](cfg *T, name, ext string) error {
 	if name == "" {
-		return fmt.Errorf("name is required")
+		return errors.New("name is required")
 	}
 	path := name
 	if ext != "" {
 		path = fmt.Sprintf("%s.%s", name, ext)
 	}
 
-	os.Remove(path)
+	_ = os.Remove(path)
 
 	var data []byte
 	var err error
@@ -81,7 +93,7 @@ func SaveConfig[T any](cfg T, name, ext string) error {
 	default:
 		return fmt.Errorf(
 			"SaveConfig support only env"+
-				" or empty extension now, got: %s", ext)
+				" or empty extension, got: %s", ext)
 	}
 	if err != nil {
 		return fmt.Errorf("encode config failed: %w", err)
@@ -108,7 +120,7 @@ func marshalEnv[T any](cfg T) ([]byte, error) {
 		v = v.Elem()
 	}
 	if !v.IsValid() {
-		return nil, fmt.Errorf("invalid config type")
+		return nil, errors.New("invalid config type")
 	}
 	if v.Kind() != reflect.Struct {
 		return nil, fmt.Errorf("only config struct type is supported, got: %s", v.Kind())
@@ -131,7 +143,7 @@ func marshalEnv[T any](cfg T) ([]byte, error) {
 			"-", "_"))
 		val := formatEnvValue(v.Field(i))
 		if key != "" {
-			fmt.Fprintf(&buf, "%s=%s\n", key, val)
+			_, _ = fmt.Fprintf(&buf, "%s=%s\n", key, val)
 		}
 	}
 	return buf.Bytes(), nil

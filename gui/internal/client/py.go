@@ -8,7 +8,6 @@ import (
 
 type PyMsg struct {
 	Code    string         `json:"code"`
-	Message string         `json:"message"`
 	Details map[string]any `json:"details"`
 }
 
@@ -19,9 +18,8 @@ type PyEnvelope struct {
 	Log   *PyMsg `json:"log,omitempty"`
 }
 
-// TODO: need handler for ui to show info/error messages or smth else
-func runPyWithStreaming(args []string, onOut func(string, *PyMsg), onErr func(*PyMsg)) error {
-	cmd := exec.Command("../../.venv/bin/python3", args...)
+func runPyWithStreaming(venv string, args []string, onOut func(string, *PyMsg), onErr func(*PyMsg)) error {
+	cmd := exec.Command(venv+"/bin/python3", args...)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -81,10 +79,10 @@ func runPyWithStreaming(args []string, onOut func(string, *PyMsg), onErr func(*P
 	<-errDone
 	err = <-waitErr
 
+	// uncomment to handle if something went wrong during running
 	// if err != nil {
 	// 	onErr(&PyMsg{
-	// 		Code:    "UNCAUGHT_ERROR",
-	// 		Message: "Uncaught error from script",
+	// 		Code: "UNCAUGHT_ERROR",
 	// 		Details: map[string]any{
 	// 			"error": err.Error(),
 	// 		},

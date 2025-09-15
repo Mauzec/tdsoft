@@ -2,12 +2,13 @@ package ui
 
 import (
 	"errors"
-	"log"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
-	"github.com/mauzec/tdsoftgui/internal/client"
+	"github.com/mauzec/tdsoft/gui/internal/client"
+	"go.uber.org/zap"
 )
 
 const (
@@ -33,7 +34,10 @@ func loginScreen(r *Router) fyne.CanvasObject {
 	_ = r.GetServiceAs(&cl)
 	// ctx := r.ScreenContext()
 
-	cl.StartCreatorServer()
+	err := cl.StartCreatorServer()
+	if err != nil {
+		cl.ExtLog.Error("creator server start failed", zap.Error(err))
+	}
 
 	apiIDEntry, apiHashEntry := widget.NewEntry(), widget.NewEntry()
 
@@ -53,6 +57,7 @@ func loginScreen(r *Router) fyne.CanvasObject {
 	codeEntry.Disable()
 	codeRow.Hide()
 
+	// TODO: hide password when typing
 	passwordEntry := widget.NewEntry()
 	passwordEntry.SetPlaceHolder("password")
 	passwordRow := container.NewBorder(nil, nil,
@@ -73,13 +78,14 @@ func loginScreen(r *Router) fyne.CanvasObject {
 			if apiIDEntry.Text == "" || apiHashEntry.Text == "" {
 				return
 			}
+			apiIDEntry.Text = strings.TrimSpace(apiIDEntry.Text)
+			apiHashEntry.Text = strings.TrimSpace(apiHashEntry.Text)
 			cl.APIID = apiIDEntry.Text
 			cl.APIHash = apiHashEntry.Text
 
 			err := cl.SendAPIData()
 			if err != nil {
-				// TODO: add error message to UI
-				log.Println("failed to send API data:", err)
+				cl.ExtLog.Error("failed to send api data", zap.Error(err))
 				return
 			}
 
@@ -101,7 +107,7 @@ func loginScreen(r *Router) fyne.CanvasObject {
 
 			err := cl.SendPhone(phoneEntry.Text)
 			if err != nil {
-				log.Println("failed to send phone:", err)
+				cl.ExtLog.Error("failed to send phone", zap.Error(err))
 				return
 			}
 
@@ -121,7 +127,7 @@ func loginScreen(r *Router) fyne.CanvasObject {
 			err := cl.SignIn(phoneEntry.Text, codeEntry.Text)
 			if err != nil {
 				if !errors.Is(err, client.ErrPasswordNeeded) {
-					log.Println("failed to sign in:", err)
+					cl.ExtLog.Error("failed to sign in", zap.Error(err))
 					return
 				}
 
@@ -132,10 +138,14 @@ func loginScreen(r *Router) fyne.CanvasObject {
 			}
 
 			if err := cl.SaveAPIConfig(); err != nil {
-				log.Println("failed to save api config; deleting session...:", err)
-				cl.DeleteSession()
+				cl.ExtLog.Error("failed to save api config; deleting session; need restart")
+
+				_ = cl.DeleteSession()
+
 				return
 			}
+
+			_ = cl.StopCreatorServer()
 
 			r.Show(ScreenMain)
 
@@ -148,16 +158,17 @@ func loginScreen(r *Router) fyne.CanvasObject {
 
 			err := cl.CheckPassword(passwordEntry.Text)
 			if err != nil {
-				log.Println("failed to check password:", err)
+				cl.ExtLog.Error("failed to check password", zap.Error(err))
 				return
 			}
 
 			if err := cl.SaveAPIConfig(); err != nil {
-				log.Println("failed to save api config; deleting session...:", err)
-				cl.DeleteSession()
+				cl.ExtLog.Error("failed to save api config; deleting session...", zap.Error(err))
+				_ = cl.DeleteSession()
 				return
 			}
 
+			_ = cl.StopCreatorServer()
 			r.Show(ScreenMain)
 		}
 	}
