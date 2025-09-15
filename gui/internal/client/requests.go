@@ -139,14 +139,16 @@ func (req *GetChatStatsRequest) Validate() error {
 }
 
 // GetMembers get members of a group/channel if possible
-func (cl *Client) GetMembers(req *GetMembersRequest) error {
+func (cl *Client) GetMembers(req *GetMembersRequest, validate bool) error {
 	if cl.UserLogF == nil {
 		cl.ExtLog.Error("no user log function to set")
 		return errors.New("no user log function set")
 	}
-	if err := req.Validate(); err != nil {
-		cl.ExtLog.Warn("validating get members request failed", zap.Error(err))
-		return err
+	if validate {
+		if err := req.Validate(); err != nil {
+			cl.ExtLog.Warn("validating get members request failed", zap.Error(err))
+			return err
+		}
 	}
 
 	args := []string{cl.cfg.ScriptsPath + "/get_members.py"}
@@ -222,14 +224,16 @@ func (cl *Client) GetMembers(req *GetMembersRequest) error {
 	return nil
 }
 
-func (cl *Client) GetChatStats(req *GetChatStatsRequest) error {
+func (cl *Client) GetChatStats(req *GetChatStatsRequest, validate bool) error {
 	if cl.UserLogF == nil {
 		cl.ExtLog.Error("no user log function to set")
 		return errors.New("no user log function set")
 	}
-	if err := req.Validate(); err != nil {
-		cl.ExtLog.Warn("validating get members request failed", zap.Error(err))
-		return err
+	if validate {
+		if err := req.Validate(); err != nil {
+			cl.ExtLog.Warn("validating get members request failed", zap.Error(err))
+			return err
+		}
 	}
 
 	args := []string{cl.cfg.ScriptsPath + "/get_chat_statistic.py"}

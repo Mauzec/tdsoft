@@ -21,8 +21,7 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="get public members of a TG chat")
     p.add_argument(
         # TODO: invite links not supported
-        "chat", help="username, t.me/username, invite link(not supported yet)"
-    )
+        "chat", help="username, t.me/username, invite link(not supported yet), id")
     p.add_argument('--limit', type=int, default=1000, 
                    help='maximum number of members to return (default is 1000, max is 50000)')
     
@@ -38,23 +37,19 @@ def parse_args() -> argparse.Namespace:
 
     # TODO
     p.add_argument(
-        '--exclude-bots', action='store_true', help='exclude bots from the output'
-    )
+        '--exclude-bots', action='store_true', help='exclude bots from the output')
     
     p.add_argument(
         '--parse-bio', action='store_true', 
-        help='(+1 time) add user/bot bio to the output'
-    )
+        help='(+1 time) add user/bot bio to the output')
     
     p.add_argument(
         '--add-additional-info', action='store_true',
-        help= 'add user/bot additional info to the output (bio, premium, scam flag, etc)'
-    )
+        help= 'add user/bot additional info to the output (bio, premium, scam flag, etc)')
 
     # not supported yet
     p.add_argument(
-        '--auto-join', action='store_true', help='automatically join the chat if not a member',
-    )
+        '--auto-join', action='store_true', help='automatically join the chat if not a member',)
     
     # TODO: implement it, this useful for large groups and when no need parse all
     # p.add_argument(

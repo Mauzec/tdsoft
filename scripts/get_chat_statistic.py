@@ -19,20 +19,17 @@ SESSION = os.path.join(os.getcwd(), "test_account")
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description='''Get chat statistics. 
-        WARNING: without --limit-history it will read all history of the chat. '''
-    )
+        WARNING: without --history-limit it will read all history of the chat. ''')
     p.add_argument(
         # TODO: invite links not supported
-        "chat", help="username, t.me/username, invite link(not supported yet)"
-    )
+        "chat", help="username, t.me/username, invite link(not supported yet), id")
     p.add_argument(
         "--output", type=str, default=f'get-statistics-{int(time.time())}.csv',
         help="output csv file path; default is get-chat-statistics-<time>.csv")
     
     p.add_argument(
         '--history-limit', type=int, default=0,
-        help='limit number of messages to parse from history; default is 0 (all history)'
-    )
+        help='limit number of messages to parse from history; default is 0 (all history)')
     
     return p.parse_args()
 
@@ -68,8 +65,8 @@ async def fetch_history_statistics(
     msg_per_weekday: defaultdict[int, int] = defaultdict(int)
     
     top_msg_senders: defaultdict[str, int] = defaultdict(int)
-    
-    while (args.history_limit > 0 and total_messages < args.history_limit) or True:
+    while (total_messages < args.history_limit) or (args.history_limit <= 0):
+
         curr_messages = 0
         last_msg_id: Optional[int] = None
         if args.history_limit > 0 and args.history_limit - total_messages < page_size:
@@ -91,6 +88,10 @@ async def fetch_history_statistics(
                     msg_per_weekday[weekday] += 1
                     
                     if (msg.text or msg.media):
+                        if msg.media:
+                            io.message(None, 'info', 'MEDIA_MESSAGE',
+                                        when='fetching history statistics',
+                                        media_type=msg.media.value, msg_id=msg.id)
                         username: str = 'UNKNOWN'
                         if msg.from_user:
                             if msg.from_user.username:
@@ -103,13 +104,13 @@ async def fetch_history_statistics(
                             username = msg.sender_chat.title
                         top_msg_senders[username] += 1
                         
-                    actual_messages = 0
+                    actual_messages += 1
                 
                 total_messages += 1
                 last_msg_id = msg.id
                 curr_messages += 1
                 
-                if (args.history_limit > 0 and total_messages < args.history_limit):
+                if (args.history_limit > 0 and total_messages >= args.history_limit):
                     break
         
         except errors.FloodWait as e:
@@ -180,6 +181,7 @@ async def get_statistics(
 
 
 async def main():
+    io.message(None, 'info', 'SCRIPT_STARTED', script='get_members.py')
     args = parse_args()
 
     options: Dict[str, Any] = get_tdlib_options()

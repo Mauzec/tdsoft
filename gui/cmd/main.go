@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/v2/app"
 	"github.com/mauzec/tdsoft/gui/internal/client"
 	"github.com/mauzec/tdsoft/gui/internal/config"
+	apperrors "github.com/mauzec/tdsoft/gui/internal/errors"
 	"github.com/mauzec/tdsoft/gui/internal/ui"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -50,7 +51,7 @@ func main() {
 
 	cl, err := client.NewClient(logger, appCfg)
 	if err != nil {
-		if errors.Is(err, client.ErrNeedAuth) {
+		if errors.Is(err, apperrors.ErrNeedAuth) {
 			logger.Info("unable to load API config, need auth", zap.Error(err))
 		} else {
 			logger.Fatal("failed to create client", zap.Error(err))

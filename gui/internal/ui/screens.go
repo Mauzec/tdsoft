@@ -8,6 +8,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 	"github.com/mauzec/tdsoft/gui/internal/client"
+	apperrors "github.com/mauzec/tdsoft/gui/internal/errors"
 	"go.uber.org/zap"
 )
 
@@ -126,7 +127,7 @@ func loginScreen(r *Router) fyne.CanvasObject {
 
 			err := cl.SignIn(phoneEntry.Text, codeEntry.Text)
 			if err != nil {
-				if !errors.Is(err, client.ErrPasswordNeeded) {
+				if !errors.Is(err, apperrors.ErrPasswordNeeded) {
 					cl.ExtLog.Error("failed to sign in", zap.Error(err))
 					return
 				}

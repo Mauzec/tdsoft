@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mauzec/tdsoft/gui/internal/config"
+	apperrors "github.com/mauzec/tdsoft/gui/internal/errors"
 	"go.uber.org/zap"
 )
 
@@ -41,7 +42,8 @@ func NewClient(extendedLogger *zap.Logger, appCfg *config.AppConfig) (*Client, e
 
 	cl.cfg = appCfg
 	if extendedLogger == nil {
-		return cl, ErrExtendedLoggerNotProvided
+
+		return cl, apperrors.ErrExtendedLoggerNotProvided
 	}
 	cl.ExtLog = extendedLogger
 
@@ -49,7 +51,7 @@ func NewClient(extendedLogger *zap.Logger, appCfg *config.AppConfig) (*Client, e
 	if err != nil {
 		cl.NeedAuth = true
 		_ = cl.DeleteSession()
-		return cl, errors.Join(ErrNeedAuth, err)
+		return cl, errors.Join(apperrors.ErrNeedAuth, err)
 	}
 	cl.APIID = cfg.APIID
 	cl.APIHash = cfg.APIHash
@@ -100,10 +102,10 @@ func NewClient(extendedLogger *zap.Logger, appCfg *config.AppConfig) (*Client, e
 
 func (cl *Client) DeleteSession() error {
 	if err := os.Remove(cl.cfg.AuthConfigName + ".env"); err != nil {
-		return errors.Join(ErrSystemError, err)
+		return errors.Join(apperrors.ErrSystemError, err)
 	}
 	if err := os.Remove(cl.cfg.Session + ".session"); err != nil {
-		return errors.Join(ErrSystemError, err)
+		return errors.Join(apperrors.ErrSystemError, err)
 	}
 	return nil
 }
@@ -126,7 +128,7 @@ func (cl *Client) StartCreatorServer() error {
 			}
 			time.Sleep(50 * time.Millisecond)
 		}
-		return ErrCreatorWaitTimeout
+		return apperrors.ErrCreatorWaitTimeout
 	}
 
 	cmd := exec.Command(cl.cfg.VenvPath+"/bin/python3", cl.cfg.ScriptsPath+"/connect.py")
@@ -252,7 +254,7 @@ func (cl *Client) SignIn(phone, code string) error {
 	}
 	if errMsg, ok := res["error"]; ok {
 		if strings.HasPrefix(errMsg, "password") {
-			return ErrPasswordNeeded
+			return apperrors.ErrPasswordNeeded
 		}
 		return fmt.Errorf("sign in error: %s", errMsg)
 	}
@@ -291,16 +293,16 @@ func (cl *Client) pingCreatorServer() error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return ErrCreatorPingError
+		return apperrors.ErrCreatorPingError
 	}
 
 	res := map[string]string{}
 	err = json.NewDecoder(resp.Body).Decode(&res)
 	if err != nil {
-		return ErrCreatorPingError
+		return apperrors.ErrCreatorPingError
 	}
 	if res["message"] != "pong" {
-		return ErrCreatorPingError
+		return apperrors.ErrCreatorPingError
 	}
 	return nil
 }

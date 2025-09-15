@@ -7,10 +7,11 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
-const maxLogLines = 200
+const maxLogLines = 50
 
 type LogGrid struct {
 	Grid       *widget.TextGrid
@@ -22,10 +23,12 @@ type LogGrid struct {
 	mu   sync.Mutex
 	buf  []string
 	stop chan struct{}
+
+	maxCells int
+	contPref []rune
 }
 
 func NewLogGrid(style widget.TextGridStyle) *LogGrid {
-	// FIXME: ERROR: if log string widget is too long, fyne expands the window to the right.
 	grid := widget.NewTextGrid()
 	scroll := container.NewVScroll(grid)
 
@@ -37,7 +40,11 @@ func NewLogGrid(style widget.TextGridStyle) *LogGrid {
 		buf:        make([]string, 0, maxLogLines+10),
 		flushEvery: 123 * time.Millisecond,
 		stop:       make(chan struct{}),
+
+		maxCells: -1,
+		contPref: []rune("    "),
 	}
+
 	lg.start()
 	return lg
 }
@@ -70,14 +77,15 @@ func (lg *LogGrid) flush() {
 	lg.buf = lg.buf[:0]
 	lg.mu.Unlock()
 
-	rows := make([]widget.TextGridRow, 0, len(lines))
-	for _, s := range lines {
-		cells := make([]widget.TextGridCell, 0, len(s))
-		for _, r := range s {
-			cells = append(cells, widget.TextGridCell{Rune: r, Style: lg.style})
-		}
-		rows = append(rows, widget.TextGridRow{Cells: cells})
+	if lg.maxCells < 0 {
+		w := lg.Scroll.Size().Width
+		cw := fyne.MeasureText("M", theme.TextSize(),
+			fyne.TextStyle{Monospace: true},
+		).Width
+		lg.maxCells = int(w/cw) + 4
 	}
+
+	rows := lg.wrapLines(lines)
 
 	fyne.Do(func() {
 		b := lg.isAtBottom()
@@ -91,6 +99,44 @@ func (lg *LogGrid) flush() {
 			lg.Scroll.ScrollToBottom()
 		}
 	})
+}
+
+func (lg *LogGrid) wrapLines(lines []string) []widget.TextGridRow {
+	firstCols := lg.maxCells
+	contCols := firstCols - len(lg.contPref)
+
+	rows := make([]widget.TextGridRow, 0, len(lines))
+	for _, s := range lines {
+		rns := []rune(s)
+		if len(rns) == 0 {
+			rows = append(rows, widget.TextGridRow{})
+			continue
+		}
+
+		// first
+		end := min(firstCols, len(rns))
+		rows = append(rows, lg.runesToRow(rns[:end]))
+
+		// continuation
+		for start := end; start < len(rns); start += contCols {
+			currEnd := min(start+contCols, len(rns))
+
+			// prefix n part
+			part := make([]rune, 0, len(lg.contPref)+(currEnd-start))
+			part = append(part, lg.contPref...)
+			part = append(part, rns[start:currEnd]...)
+			rows = append(rows, lg.runesToRow(part))
+		}
+	}
+	return rows
+}
+
+func (lg *LogGrid) runesToRow(rns []rune) widget.TextGridRow {
+	cells := make([]widget.TextGridCell, 0, len(rns))
+	for _, r := range rns {
+		cells = append(cells, widget.TextGridCell{Rune: r, Style: lg.style})
+	}
+	return widget.TextGridRow{Cells: cells}
 }
 
 func (lg *LogGrid) isAtBottom() bool {

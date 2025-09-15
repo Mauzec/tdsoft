@@ -20,7 +20,8 @@ type Router struct {
 	services map[reflect.Type]any
 	// per-screen last passed params (ShowWith)
 	params map[ScreenID]any
-	mu     sync.RWMutex
+
+	mu sync.RWMutex
 
 	// screen-scoped context, cancelled whenever Show switches screen
 	screenCtx context.Context

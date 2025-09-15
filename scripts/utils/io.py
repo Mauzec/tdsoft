@@ -12,8 +12,6 @@ from urllib.parse import urlparse, ParseResult
 from typing import TextIO
 import json
 
-# MAX_FLOOD_WAIT = 300
-
 CSV_FLUSHED = False
 
 def message(csvf: TextIO|None, msg_type: str, code: str, **details):
