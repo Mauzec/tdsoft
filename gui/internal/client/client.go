@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -69,17 +70,13 @@ func NewClient(extendedLogger *zap.Logger, appCfg *config.AppConfig) (*Client, e
 		},
 		"ALL_DONE": func(t string, pm *PyMsg) {
 			cl.ExtLog.Info("all done", zap.Any("details", pm.Details))
-			_ = cl.UserLog(1, "all done, result in "+pm.Details["output"].(string))
+			_ = cl.UserLog(1, "All done, result in "+pm.Details["output"].(string))
 		},
 		"SCRIPT_STARTED": func(t string, pm *PyMsg) {
 			cl.ExtLog.Info("script started", zap.Any("details", pm.Details))
 		},
 	}
 	cl.defaultPyErrHandlers = map[string]ErrHandler{
-		"UNCAUGHT_ERROR": func(pm *PyMsg) {
-			cl.ExtLog.Error("uncaught error", zap.Any("details", pm.Details))
-			_ = cl.UserLog(3, "Something went wrong")
-		},
 		"TASK_CANCELLED": func(pm *PyMsg) {
 			cl.ExtLog.Error("task cancelled", zap.Any("details", pm.Details))
 			_ = cl.UserLog(2, "Task cancelled by system")
@@ -94,6 +91,9 @@ func NewClient(extendedLogger *zap.Logger, appCfg *config.AppConfig) (*Client, e
 		},
 		"ARGPARSE_ERROR": func(pm *PyMsg) {
 			cl.ExtLog.Error("argument parse error", zap.Any("details", pm.Details))
+		},
+		"SCRIPT_UNCAUGHT_ERROR": func(pm *PyMsg) {
+			cl.ExtLog.Error("script failed", zap.Any("details", pm.Details))
 		},
 	}
 
@@ -144,7 +144,7 @@ func (cl *Client) StartCreatorServer() error {
 	err := wait(5 * time.Second)
 	if err != nil {
 		_ = cl.StopCreatorServer()
-		return nil
+		return err
 	}
 
 	cl.ExtLog.Info("creator server started", zap.Int("pid", cmd.Process.Pid))
@@ -156,15 +156,12 @@ func (cl *Client) StopCreatorServer() error {
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(
-		context.Background(), 1*time.Second,
-	)
+	// try gracefu http shutdown, but proceed regardless of error
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, "GET",
-		cl.cfg.CreatorURI+"/shutdown", nil)
-	_, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
+	req, _ := http.NewRequestWithContext(ctx, "GET", cl.cfg.CreatorURI+"/shutdown", nil)
+	if _, err := http.DefaultClient.Do(req); err != nil {
+		cl.ExtLog.Warn("creator server shutdown HTTP failed, proceeding to signal", zap.Error(err))
 	}
 
 	waitCh := make(chan error, 1)
@@ -195,8 +192,13 @@ func (cl *Client) SendAPIData() error {
 		return err
 	}
 
-	resp, err := http.Get(cl.cfg.CreatorURI + "/api_data?" +
-		"api_id=" + cl.APIID + "&api_hash=" + cl.APIHash)
+	v := url.Values{}
+	v.Set("api_id", cl.APIID)
+	v.Set("api_hash", cl.APIHash)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", cl.cfg.CreatorURI+"/api_data?"+v.Encode(), nil)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -218,8 +220,12 @@ func (cl *Client) SendPhone(phone string) error {
 		return err
 	}
 
-	resp, err := http.Get(cl.cfg.CreatorURI + "/send_code?" +
-		"phone=" + phone)
+	v := url.Values{}
+	v.Set("phone", phone)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", cl.cfg.CreatorURI+"/send_code?"+v.Encode(), nil)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -241,8 +247,13 @@ func (cl *Client) SignIn(phone, code string) error {
 		return err
 	}
 
-	resp, err := http.Get(cl.cfg.CreatorURI + "/sign_in?" +
-		"phone=" + phone + "&code=" + code)
+	v := url.Values{}
+	v.Set("phone", phone)
+	v.Set("code", code)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", cl.cfg.CreatorURI+"/sign_in?"+v.Encode(), nil)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -267,8 +278,12 @@ func (cl *Client) CheckPassword(password string) error {
 		return err
 	}
 
-	resp, err := http.Get(cl.cfg.CreatorURI + "/check_password?" +
-		"password=" + password)
+	v := url.Values{}
+	v.Set("password", password)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", cl.cfg.CreatorURI+"/check_password?"+v.Encode(), nil)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -286,7 +301,10 @@ func (cl *Client) CheckPassword(password string) error {
 }
 
 func (cl *Client) pingCreatorServer() error {
-	resp, err := http.Get(cl.cfg.CreatorURI + "/ping?message=ping")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", cl.cfg.CreatorURI+"/ping?message=ping", nil)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}

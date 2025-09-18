@@ -57,7 +57,7 @@ async def fetch_history_statistics(
 ) -> HistoryStatistics:
     total_messages = 0
     actual_messages = 0
-    page_size = 50
+    page_size = 75
     offset_id = 0
     
     msg_per_day: defaultdict[date, int] = defaultdict(int)
@@ -74,11 +74,11 @@ async def fetch_history_statistics(
             
         try: 
             history: AsyncGenerator[types.Message, None] = \
-                app.get_chat_history(chat_id, page_size, offset_id=offset_id)
+                app.get_chat_history(chat_id, limit=page_size, offset_id=offset_id)
             
             async for msg in history:
     
-                if not msg.service and not msg.empty:
+                if not msg.service and not msg.empty and (msg.text or msg.media):
                     d: date = msg.date.date()
                     
                     msg_per_day[d] += 1
@@ -87,22 +87,18 @@ async def fetch_history_statistics(
                     weekday = d.weekday()
                     msg_per_weekday[weekday] += 1
                     
-                    if (msg.text or msg.media):
-                        if msg.media:
-                            io.message(None, 'info', 'MEDIA_MESSAGE',
-                                        when='fetching history statistics',
-                                        media_type=msg.media.value, msg_id=msg.id)
-                        username: str = 'UNKNOWN'
-                        if msg.from_user:
-                            if msg.from_user.username:
-                                username = msg.from_user.username or 'UNKNOWN'
-                            elif msg.from_user.first_name or msg.from_user.last_name:
-                                username = (msg.from_user.first_name or '') + ' ' + (msg.from_user.last_name or '')
-                        elif msg.sender_chat.username:
-                            username = msg.sender_chat.username
-                        elif msg.sender_chat.title:
-                            username = msg.sender_chat.title
-                        top_msg_senders[username] += 1
+                    
+                    username: str = 'UNKNOWN'
+                    if msg.from_user:
+                        if msg.from_user.username:
+                            username = msg.from_user.username or 'UNKNOWN'
+                        elif msg.from_user.first_name or msg.from_user.last_name:
+                            username = (msg.from_user.first_name or '') + ' ' + (msg.from_user.last_name or '')
+                    elif msg.sender_chat.username:
+                        username = msg.sender_chat.username
+                    elif msg.sender_chat.title:
+                        username = msg.sender_chat.title
+                    top_msg_senders[username] += 1
                         
                     actual_messages += 1
                 
@@ -181,8 +177,11 @@ async def get_statistics(
 
 
 async def main():
-    io.message(None, 'info', 'SCRIPT_STARTED', script='get_members.py')
-    args = parse_args()
+    io.message(None, 'info', 'SCRIPT_STARTED', script='get_chat_statistic.py')
+    try:
+        args = parse_args()
+    except Exception as e:
+        io.message(None, 'error', "ARGPARSE_ERROR", error=str(e))
 
     options: Dict[str, Any] = get_tdlib_options()
     api_id: int = options["api_id"]

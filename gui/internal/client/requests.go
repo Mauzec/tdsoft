@@ -52,7 +52,7 @@ type Request interface {
 }
 
 type GetMembersRequest struct {
-	// ChatID is either a username(t.me/user, user, @user),
+	// ChatID is either a username(t.me/chat, chat, @chat),
 	// a chatID (not peerID), or invite link. Required
 	//
 	// TODO: invite link not supported yet.
@@ -102,16 +102,15 @@ func (req *GetMembersRequest) Validate() error {
 	if req.Limit < 0 || req.Limit > 50000 {
 		return errors.New("Limit must be between 1 and 50,000")
 	}
-
 	if req.ParseFromMessages && (req.MessagesLimit < 0 || req.MessagesLimit > 5000) {
 		return errors.New("MessagesLimit must be between 1 and 5000")
-
 	}
+	req.Output = strings.TrimSpace(req.Output)
 	return nil
 }
 
 type GetChatStatsRequest struct {
-	// ChatID is either a username(t.me/user, user, @user),
+	// ChatID is either a username(t.me/chat, chat, @chat),
 	// a chatID (not peerID), or invite link. Required
 	//
 	// TODO: invite link not supported yet.
@@ -133,8 +132,51 @@ func (req *GetChatStatsRequest) Validate() error {
 		return errors.New("ChatID is required")
 	}
 	if req.MessagesLimit < 0 {
-		return errors.New("Limit must be greater or equal than 0")
+		return errors.New("MessagesLimit must be greater or equal to 0")
 	}
+	req.Output = strings.TrimSpace(req.Output)
+	return nil
+}
+
+type SearchMessagesRequest struct {
+	// ChatID is either a username(t.me/chat, chat, @chat),
+	// a chatID (not peerID), or invite link. Required
+	//
+	// TODO: invite link not supported yet.
+	ChatID string
+
+	// Username is a username(t.me/user, user, @user)
+	// Required
+	Username string
+
+	// Output is the path to the CSV file where
+	// results will be saved. The default is
+	// "./search-messages-<username>-<timestamp>.csv".
+	Output string
+
+	// FromDate is the start date in MM/DD/YYYY format.
+	FromDate string
+
+	// ToDate is the end date in MM/DD/YYYY format.
+	ToDate string
+}
+
+func (req *SearchMessagesRequest) Validate() error {
+	req.ChatID = strings.TrimSpace(req.ChatID)
+	if req.ChatID == "" {
+		return errors.New("ChatID is required")
+	}
+	req.Username = strings.TrimSpace(req.Username)
+	if req.Username == "" {
+		return errors.New("Username is required")
+	}
+	if req.FromDate == "" {
+		return errors.New("FromDate is required")
+	}
+	if req.ToDate == "" {
+		return errors.New("ToDate is required")
+	}
+	req.Output = strings.TrimSpace(req.Output)
 	return nil
 }
 
@@ -217,7 +259,6 @@ func (cl *Client) GetMembers(req *GetMembersRequest, validate bool) error {
 	onErr := ComposeOnErr(cl.defaultPyErrHandlers, extraErr)
 
 	if err := runPyWithStreaming(cl.cfg.VenvPath, args, onOut, onErr); err != nil {
-		cl.ExtLog.Error("running python script failed", zap.Error(err))
 		_ = cl.UserLog(3, "something went wrong")
 		return err
 	}
@@ -231,7 +272,7 @@ func (cl *Client) GetChatStats(req *GetChatStatsRequest, validate bool) error {
 	}
 	if validate {
 		if err := req.Validate(); err != nil {
-			cl.ExtLog.Warn("validating get members request failed", zap.Error(err))
+			cl.ExtLog.Warn("validating get chat stats request failed", zap.Error(err))
 			return err
 		}
 	}
@@ -240,7 +281,10 @@ func (cl *Client) GetChatStats(req *GetChatStatsRequest, validate bool) error {
 	args = append(args, req.ChatID)
 
 	if req.MessagesLimit > 0 {
-		args = append(args, "--history-limit=", strconv.Itoa(req.MessagesLimit))
+		args = append(args, "--history-limit", strconv.Itoa(req.MessagesLimit))
+	}
+	if req.Output != "" {
+		args = append(args, "--output", req.Output)
 	}
 
 	extraOut := map[string]OutHandler(nil)
@@ -260,9 +304,83 @@ func (cl *Client) GetChatStats(req *GetChatStatsRequest, validate bool) error {
 	onErr := ComposeOnErr(cl.defaultPyErrHandlers, extraErr)
 
 	if err := runPyWithStreaming(cl.cfg.VenvPath, args, onOut, onErr); err != nil {
-		cl.ExtLog.Error("running python script failed", zap.Error(err))
 		_ = cl.UserLog(3, "something went wrong")
 		return err
 	}
+	return nil
+}
+
+func (cl *Client) SearchMessages(req *SearchMessagesRequest, validate bool) error {
+	if cl.UserLogF == nil {
+		cl.ExtLog.Error("no user log function to set")
+		return errors.New("no user log function set")
+	}
+	if validate {
+		if err := req.Validate(); err != nil {
+			cl.ExtLog.Warn("validating search messages request failed", zap.Error(err))
+			return err
+		}
+	}
+
+	args := []string{cl.cfg.ScriptsPath + "/search_messages.py"}
+	args = append(args, req.ChatID)
+	args = append(args, req.Username)
+
+	if req.Output != "" {
+		args = append(args, "--output", req.Output)
+	}
+	args = append(args, "--from-date", req.FromDate)
+	args = append(args, "--to-date", req.ToDate)
+
+	extraOut := map[string]OutHandler{
+		"MESSAGES_FETCHED": func(s string, pm *PyMsg) {
+			cl.ExtLog.Info("fetched messages",
+				zap.Any("details", pm.Details))
+			_ = cl.UserLog(1,
+				fmt.Sprintf("fetched %v messages", pm.Details["total"]),
+			)
+		},
+	}
+	extraErr := map[string]ErrHandler{
+		"FROM_DATE_REQUIRED": func(pm *PyMsg) {
+			cl.ExtLog.Error("got no from date")
+			_ = cl.UserLog(3, "start date is required")
+		},
+		"TO_DATE_REQUIRED": func(pm *PyMsg) {
+			cl.ExtLog.Error("got no to date")
+			_ = cl.UserLog(3, "end date is required")
+		},
+		"FROM_DATE_INVALID": func(pm *PyMsg) {
+			cl.ExtLog.Error("from_date invalid", zap.Any("details", pm.Details))
+			_ = cl.UserLog(3, "invalid from date format, use MM/DD/YYYY")
+		},
+		"TO_DATE_INVALID": func(pm *PyMsg) {
+			cl.ExtLog.Error("to_date invalid", zap.Any("details", pm.Details))
+			_ = cl.UserLog(3, "invalid to date format, use MM/DD/YYYY")
+		},
+		"INVALID_CHAT_NAME": func(pm *PyMsg) {
+			cl.ExtLog.Error("invalid chat name",
+				zap.Any("details", pm.Details))
+			_ = cl.UserLog(3, fmt.Sprintf("invalid chat name: %s",
+				pm.Details["name"]))
+		},
+		"INVITE_LINK_NOT_SUPPORTED": func(pm *PyMsg) {
+			cl.ExtLog.Error("invite link not supported yet")
+			_ = cl.UserLog(3, "invite link not supported yet")
+		},
+		"INVALID_USERNAME": func(pm *PyMsg) {
+			cl.ExtLog.Error("invalid username",
+				zap.Any("details", pm.Details))
+			_ = cl.UserLog(3, "invalid username")
+		},
+	}
+	onOut := ComposeOnOut(cl.defaultPyOutHandlers, extraOut)
+	onErr := ComposeOnErr(cl.defaultPyErrHandlers, extraErr)
+
+	if err := runPyWithStreaming(cl.cfg.VenvPath, args, onOut, onErr); err != nil {
+		_ = cl.UserLog(3, "something went wrong")
+		return err
+	}
+
 	return nil
 }

@@ -161,6 +161,19 @@ func (lg *LogGrid) Close() {
 	close(lg.stop)
 }
 
+func (lg *LogGrid) Clear() {
+	lg.mu.Lock()
+	lg.buf = lg.buf[:0]
+	lg.mu.Unlock()
+
+	fyne.Do(func() {
+		// optimize memory?
+		lg.Grid.Rows = lg.Grid.Rows[:0]
+		lg.Grid.Refresh()
+		lg.Scroll.ScrollToTop()
+	})
+}
+
 // func (lg *LogGrid) AppendLine(s string) {
 // 	row := widget.TextGridRow{
 // 		Cells: make([]widget.TextGridCell, 0, len(s)),
@@ -174,7 +187,3 @@ func (lg *LogGrid) Close() {
 // 		lg.Grid.Rows = lg.Grid.Rows[1:]
 // 	}
 // }
-
-func (lg *LogGrid) Clear() {
-	// TODO:
-}

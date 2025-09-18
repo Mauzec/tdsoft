@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"time"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
@@ -13,6 +15,7 @@ import (
 
 // TODO: add red lighting of invalid entries
 // TODO: add more validation to entries (chat name for ex)
+// TODO: add date pickers in search messages
 
 const (
 	ScreenMain ScreenID = "main"
@@ -36,9 +39,18 @@ type ChatStatsState struct {
 	Output        binding.String
 }
 
+type SearchMessagesState struct {
+	Chat     binding.String
+	Username binding.String
+	Output   binding.String
+	FromDate binding.String
+	ToDate   binding.String
+}
+
 type UIMainState struct {
-	ParserMembers *ParserMembersState
-	ChatStats     *ChatStatsState
+	ParserMembers  *ParserMembersState
+	ChatStats      *ChatStatsState
+	SearchMessages *SearchMessagesState
 }
 
 func NewUIState() *UIMainState {
@@ -59,12 +71,19 @@ func NewUIState() *UIMainState {
 			MessagesLimit: binding.NewString(),
 			Output:        binding.NewString(),
 		},
+		SearchMessages: &SearchMessagesState{
+			Chat:     binding.NewString(),
+			Username: binding.NewString(),
+			Output:   binding.NewString(),
+			FromDate: binding.NewString(),
+			ToDate:   binding.NewString(),
+		},
 	}
 }
 
 // chatStatsMenu gets chat statistics. It is the part of mainScreen
 //
-//	Services: *client.Client
+//	Services: *client.Client, *UIMainState
 func chatStatsMenu(r *Router) fyne.CanvasObject {
 	var (
 		cl *client.Client
@@ -156,13 +175,6 @@ func chatStatsMenu(r *Router) fyne.CanvasObject {
 		errCh := make(chan error, 1)
 		go func() {
 			errCh <- cl.GetChatStats(req, false)
-		}()
-
-		go func() {
-			if err := <-errCh; err != nil {
-				cl.ExtLog.Error("getting chat stats failed", zap.Error(err))
-				_ = cl.UserLog(3, "Getting chat statistics failed")
-			}
 			enableAll()
 		}()
 	}
@@ -183,7 +195,7 @@ func chatStatsMenu(r *Router) fyne.CanvasObject {
 
 // parserMembersMenu parses members. It is the part of mainScreen.
 //
-//	Services: *client.Client
+//	Services: *client.Client, *UIMainState
 func parserMembersMenu(r *Router) fyne.CanvasObject {
 	var (
 		cl *client.Client
@@ -334,13 +346,6 @@ func parserMembersMenu(r *Router) fyne.CanvasObject {
 		errCh := make(chan error, 1)
 		go func() {
 			errCh <- cl.GetMembers(req, false)
-		}()
-
-		go func() {
-			if err := <-errCh; err != nil {
-				cl.ExtLog.Error("getting members failed", zap.Error(err))
-				_ = cl.UserLog(3, "Getting members failed")
-			}
 			enableAll()
 		}()
 	}
@@ -372,6 +377,176 @@ func parserMembersMenu(r *Router) fyne.CanvasObject {
 	)
 }
 
+// searchMessagesMenu search messages from username in given chat. It is the part of mainScreen.
+//
+//	Services: *client.Client, *UIMainState
+func searchMessagesMenu(r *Router) fyne.CanvasObject {
+	var (
+		cl *client.Client
+		st *UIMainState
+	)
+	_ = r.GetServiceAs(&st)
+	_ = r.GetServiceAs(&cl)
+
+	header := widget.NewLabelWithStyle("Search messages",
+		fyne.TextAlignCenter, fyne.TextStyle{Bold: true},
+	)
+
+	chatNameEntry := widget.NewEntryWithData(st.SearchMessages.Chat)
+	chatNameEntry.SetPlaceHolder("@chat or t.me/username or id")
+	chatNameEntry.Validator = nil
+
+	usernameEntry := widget.NewEntryWithData(st.SearchMessages.Username)
+	usernameEntry.SetPlaceHolder("@username")
+	usernameEntry.Validator = nil
+
+	outputEntry := widget.NewEntryWithData(st.SearchMessages.Output)
+	outputEntry.SetPlaceHolder("Optional")
+	outputEntry.Validator = nil
+
+	form := container.New(layout.NewFormLayout(),
+		widget.NewLabel("Channel or group"), chatNameEntry,
+		widget.NewLabel("Username"), usernameEntry,
+		widget.NewLabel("Output CSV"), outputEntry,
+	)
+
+	fromDateEntry, toDateEntry := widget.NewDateEntry(), widget.NewDateEntry()
+	t := time.Now()
+	fromDateEntry.SetDate(&t)
+	toDateEntry.SetDate(&t)
+	fromDateEntry.SetPlaceHolder("MM/DD/YYYY")
+	toDateEntry.SetPlaceHolder("MM/DD/YYYY")
+	fromDateEntry.Validator = nil
+	fromDateEntry.OnChanged = func(d *time.Time) {
+		cl.ExtLog.Debug("call from date changed", zap.Any("date", d))
+		if d == nil {
+			return
+		}
+		if d.Year() <= 2000 {
+			return
+		}
+		if d.Month() > 12 || d.Month() < 1 || d.Day() < 1 || d.Day() > 31 {
+			return
+		}
+		_ = st.SearchMessages.FromDate.Set(d.Format("01/02/2006"))
+		t, _ := st.SearchMessages.FromDate.Get()
+		cl.ExtLog.Debug("from date changed", zap.Any("date", t))
+	}
+	toDateEntry.Validator = nil
+	toDateEntry.OnChanged = func(d *time.Time) {
+		cl.ExtLog.Debug("call to date changed", zap.Any("date", d))
+		if d == nil {
+			return
+		}
+		if d.Year() <= 2000 {
+			return
+		}
+		if d.Month() > 12 || d.Month() < 1 || d.Day() < 1 || d.Day() > 31 {
+			return
+		}
+		_ = st.SearchMessages.ToDate.Set(d.Format("01/02/2006"))
+		t, _ := st.SearchMessages.ToDate.Get()
+		cl.ExtLog.Debug("to date changed", zap.Any("date", t))
+	}
+	dateRow := container.NewCenter(
+		container.NewHBox(
+			container.New(layout.NewGridWrapLayout(
+				fyne.NewSize(180, fromDateEntry.MinSize().Height)),
+				fromDateEntry,
+			),
+			container.New(layout.NewGridWrapLayout(
+				fyne.NewSize(180, toDateEntry.MinSize().Height)),
+				toDateEntry,
+			),
+		),
+	)
+
+	searchButton := widget.NewButton("Search", nil)
+	actions := container.NewCenter(container.New(
+		layout.NewGridWrapLayout(func() fyne.Size {
+			sz := searchButton.MinSize()
+			return fyne.Size{Width: sz.Width + 27.0, Height: sz.Height}
+		}()), searchButton,
+	))
+
+	searchButton.OnTapped = func() {
+		func() {
+			fyne.Do(func() {
+				chatNameEntry.Disable()
+				usernameEntry.Disable()
+				outputEntry.Disable()
+				fromDateEntry.Disable()
+				toDateEntry.Disable()
+				searchButton.Disable()
+			})
+		}()
+		enableAll := func() {
+			fyne.Do(func() {
+				chatNameEntry.Enable()
+				usernameEntry.Enable()
+				outputEntry.Enable()
+				fromDateEntry.Enable()
+				toDateEntry.Enable()
+				searchButton.Enable()
+			})
+		}
+
+		req := &client.SearchMessagesRequest{}
+
+		chat, _ := st.SearchMessages.Chat.Get()
+		if err := utils.PreValidateChatName(chat); err != nil {
+			cl.ExtLog.Warn("bad chat name",
+				zap.String("chat", chat), zap.Error(err),
+			)
+			enableAll()
+			return
+		}
+		req.ChatID = chat
+
+		username, _ := st.SearchMessages.Username.Get()
+		if err := utils.PreValidateChatName(username); err != nil {
+			cl.ExtLog.Warn("bad username",
+				zap.String("username", username), zap.Error(err),
+			)
+			enableAll()
+			return
+		}
+		req.Username = username
+
+		out, _ := st.SearchMessages.Output.Get()
+		req.Output = out
+
+		fromDateEntry.OnChanged(fromDateEntry.Date)
+		toDateEntry.OnChanged(toDateEntry.Date)
+
+		fromDate, _ := st.SearchMessages.FromDate.Get()
+		req.FromDate = fromDate
+		toDate, _ := st.SearchMessages.ToDate.Get()
+		req.ToDate = toDate
+
+		if err := req.Validate(); err != nil {
+			cl.ExtLog.Warn("bad SearchMessagesRequest",
+				zap.Any("req", req), zap.Error(err),
+			)
+			enableAll()
+			return
+		}
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- cl.SearchMessages(req, false)
+			enableAll()
+		}()
+	}
+
+	return container.NewVBox(
+		header,
+		widget.NewSeparator(),
+		form,
+		dateRow,
+		actions,
+	)
+}
+
 // mainScreen is the main application screen, that shows after login.
 //
 //	Services: *client.Client, fyne.Window
@@ -398,6 +573,9 @@ func mainScreen(r *Router) fyne.CanvasObject {
 		}),
 		widget.NewButton("Chat Stats", func() {
 			setContent(chatStatsMenu(r))
+		}),
+		widget.NewButton("Search Messages", func() {
+			setContent(searchMessagesMenu(r))
 		}),
 		widget.NewButton("TODO", func() {
 			setContent(widget.NewLabel("todo"))

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"os/exec"
+	"strings"
 )
 
 type PyMsg struct {
@@ -36,6 +37,9 @@ func runPyWithStreaming(venv string, args []string, onOut func(string, *PyMsg), 
 
 	outDone := make(chan struct{})
 	errDone := make(chan struct{})
+	seenStructErr := false
+	var stderrLines []string
+	const maxStderrLines = 200
 
 	go func() {
 		defer close(outDone)
@@ -61,10 +65,16 @@ func runPyWithStreaming(venv string, args []string, onOut func(string, *PyMsg), 
 		defer close(errDone)
 		for scErr.Scan() {
 			var env PyEnvelope
-			if nil == json.Unmarshal(scErr.Bytes(), &env) &&
-				env.Error != nil && onErr != nil {
-				onErr(env.Error)
-				return
+			if err := json.Unmarshal(scErr.Bytes(), &env); err == nil && env.Error != nil {
+				seenStructErr = true
+				if onErr != nil {
+					onErr(env.Error)
+				}
+				continue
+			}
+			stderrLines = append(stderrLines, scErr.Text())
+			if len(stderrLines) > maxStderrLines {
+				stderrLines = stderrLines[len(stderrLines)-maxStderrLines:]
 			}
 		}
 	}()
@@ -79,15 +89,19 @@ func runPyWithStreaming(venv string, args []string, onOut func(string, *PyMsg), 
 	<-errDone
 	err = <-waitErr
 
-	// uncomment to handle if something went wrong during running
-	// if err != nil {
-	// 	onErr(&PyMsg{
-	// 		Code: "UNCAUGHT_ERROR",
-	// 		Details: map[string]any{
-	// 			"error": err.Error(),
-	// 		},
-	// 	})
-	// }
-
-	return nil
+	if err != nil {
+		if seenStructErr {
+			return nil
+		}
+		if onErr != nil {
+			onErr(&PyMsg{
+				Code: "SCRIPT_UNCAUGHT_ERROR",
+				Details: map[string]any{
+					"error":  err.Error(),
+					"stderr": strings.Join(stderrLines, "\n"),
+				},
+			})
+		}
+	}
+	return err
 }
