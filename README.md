@@ -12,6 +12,8 @@
 Start the GUI
 
 ```bash
+go mod tidy
+
 go run gui/cmd/main.go
 # or
 bash main.sh
