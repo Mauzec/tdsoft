@@ -2,13 +2,18 @@ from pyrogram import Client
 from pyrogram.errors import SessionPasswordNeeded, BadRequest
 from fastapi import FastAPI
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Tuple
 from pyrogram import raw
 from os import system
 import uvicorn
+from urllib.parse import urlparse
 import os
+try:
+    import tomllib as _tomllib
+    _open_mode = "rb"
+except Exception:
+    _open_mode = "r"
 
-# TODO: add reading host, port from cfg
 
 app = FastAPI()
 server = None
@@ -127,7 +132,33 @@ async def shutdown():
     server.should_exit = True
     return {'message': 'server shutting down'}
 
+def read_host_port(filename: str, *paths: str) -> Tuple[str, int]:
+
+        
+    config_paths = [ os.path.join(p, filename) for p in paths ]
+    
+    conf = {}
+    for path in config_paths:
+        if os.path.exists(path):
+            try:
+                with open(path, _open_mode) as f:
+                    conf = _tomllib.load(f)
+            except Exception as e:
+                print(f"failed to read {path}: {e}")
+            else:
+                print(f"loaded config from {path}")
+                break
+    
+    creator_uri = conf.get("creator_uri", "http://127.0.0.1:9001")
+    parsed = urlparse(creator_uri)
+    host = parsed.hostname or ""
+    port = parsed.port or 9001
+    return host, port
+
+
 if __name__ == '__main__':
+    host, port = read_host_port(
+        'app.toml', os.getcwd(), os.path.dirname(__file__))
     config = uvicorn.Config(app, host='127.0.0.1', port=9001, log_level='info')
     server: uvicorn.Server = uvicorn.Server(config)
     

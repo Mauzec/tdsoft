@@ -58,7 +58,6 @@ func loginScreen(r *Router) fyne.CanvasObject {
 	codeEntry.Disable()
 	codeRow.Hide()
 
-	// TODO: hide password when typing
 	passwordEntry := widget.NewEntry()
 	passwordEntry.SetPlaceHolder("password")
 	passwordRow := container.NewBorder(nil, nil,
@@ -66,6 +65,7 @@ func loginScreen(r *Router) fyne.CanvasObject {
 		passwordEntry,
 	)
 	passwordEntry.Disable()
+	passwordEntry.Password = true
 	passwordRow.Hide()
 
 	authStep := 0
@@ -101,7 +101,7 @@ func loginScreen(r *Router) fyne.CanvasObject {
 			authStep = 1
 
 		case 1:
-			// TODO: add validation
+
 			if phoneEntry.Text == "" {
 				return
 			}

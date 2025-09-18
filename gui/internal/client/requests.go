@@ -9,8 +9,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// TODO: add specific messages about errors/info that can be handled in UI
-
 type OutHandler func(string, *PyMsg)
 type ErrHandler func(*PyMsg)
 

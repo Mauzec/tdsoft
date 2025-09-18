@@ -173,17 +173,3 @@ func (lg *LogGrid) Clear() {
 		lg.Scroll.ScrollToTop()
 	})
 }
-
-// func (lg *LogGrid) AppendLine(s string) {
-// 	row := widget.TextGridRow{
-// 		Cells: make([]widget.TextGridCell, 0, len(s)),
-// 	}
-// 	for _, r := range s {
-// 		row.Cells = append(row.Cells, widget.TextGridCell{Rune: r})
-// 	}
-// 	lg.Grid.Rows = append(lg.Grid.Rows, row)
-// 	if len(lg.Grid.Rows) > lg.maxLines {
-// 		// TODO: optimize memory for large logs
-// 		lg.Grid.Rows = lg.Grid.Rows[1:]
-// 	}
-// }

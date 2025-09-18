@@ -13,10 +13,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// TODO: add red lighting of invalid entries
-// TODO: add more validation to entries (chat name for ex)
-// TODO: add date pickers in search messages
-
 const (
 	ScreenMain ScreenID = "main"
 )
@@ -565,27 +561,32 @@ func mainScreen(r *Router) fyne.CanvasObject {
 		content.Refresh()
 	}
 
+	logGrid := NewLogGrid(widget.TextGridStyleDefault)
+	cl.SetUserLogger(logGrid.Pushback)
+	// logGrid.Scroll.Hide()
+
 	menu := container.NewHBox(
 		layout.NewSpacer(),
 
 		widget.NewButton("Parse Members", func() {
 			setContent(parserMembersMenu(r))
+			// logGrid.Scroll.Show()
 		}),
 		widget.NewButton("Chat Stats", func() {
 			setContent(chatStatsMenu(r))
+			// logGrid.Scroll.Show()
 		}),
 		widget.NewButton("Search Messages", func() {
 			setContent(searchMessagesMenu(r))
+			// logGrid.Scroll.Show()
 		}),
 		widget.NewButton("TODO", func() {
 			setContent(widget.NewLabel("todo"))
+			// logGrid.Scroll.Show()
 		}),
 
 		layout.NewSpacer(),
 	)
-
-	logGrid := NewLogGrid(widget.TextGridStyleDefault)
-	cl.SetUserLogger(logGrid.Pushback)
 
 	return container.NewBorder(
 		menu, nil, nil, nil,

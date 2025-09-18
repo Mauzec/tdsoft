@@ -14,7 +14,6 @@ from datetime import datetime, date
 from collections import defaultdict
 from statistics import median
 
-# TODO:
 
 '''
 Search messages in a group/channel/private

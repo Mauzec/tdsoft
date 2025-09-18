@@ -21,7 +21,6 @@ def parse_args() -> argparse.Namespace:
         description='''Get chat statistics. 
         WARNING: without --history-limit it will read all history of the chat. ''')
     p.add_argument(
-        # TODO: invite links not supported
         "chat", help="username, t.me/username, invite link(not supported yet), id")
     p.add_argument(
         "--output", type=str, default=f'get-statistics-{int(time.time())}.csv',
@@ -40,7 +39,6 @@ COLUMNS=['title', 'username', 'public_members_count', 'bio', 'is_verified',
          '', '', '', 'top5', 'msg_senders']
 
 
-# TODO: add something more
 class HistoryStatistics:
     def __init__(self) -> None:
         self.total_messages: int = 0

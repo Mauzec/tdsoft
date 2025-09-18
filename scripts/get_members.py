@@ -15,12 +15,10 @@ SESSION = os.path.join(os.getcwd(), "test_account")
 
 # TODO: need to do something with flood_wait (add, ex, retry button in ui )
 # TODO: add more errors, like chat not found, instead of just rpc error
-# TODO: add check if messsage is service or not, or it's from group/channel or user
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="get public members of a TG chat")
     p.add_argument(
-        # TODO: invite links not supported
         "chat", help="username, t.me/username, invite link(not supported yet), id")
     p.add_argument('--limit', type=int, default=1000, 
                    help='maximum number of members to return (default is 1000, max is 50000)')
@@ -47,7 +45,7 @@ def parse_args() -> argparse.Namespace:
         '--add-additional-info', action='store_true',
         help= 'add user/bot additional info to the output (bio, premium, scam flag, etc)')
 
-    # not supported yet
+    # TODO
     p.add_argument(
         '--auto-join', action='store_true', help='automatically join the chat if not a member',)
     

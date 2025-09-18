@@ -18,8 +18,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// TODO: add print_dialogs functionality. Without it, we can't use chatid to find chats
-
 type Client struct {
 	APIID   string
 	APIHash string
@@ -43,13 +41,13 @@ func NewClient(extendedLogger *zap.Logger, appCfg *config.AppConfig) (*Client, e
 
 	cl.cfg = appCfg
 	if extendedLogger == nil {
-
 		return cl, apperrors.ErrExtendedLoggerNotProvided
 	}
 	cl.ExtLog = extendedLogger
 
+	_, statErr := os.Stat(cl.cfg.Session + ".session")
 	cfg, err := config.LoadConfig[config.TGAPIConfig](appCfg.AuthConfigName, "env", ".")
-	if err != nil {
+	if statErr != nil || err != nil {
 		cl.NeedAuth = true
 		_ = cl.DeleteSession()
 		return cl, errors.Join(apperrors.ErrNeedAuth, err)
