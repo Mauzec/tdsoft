@@ -24,7 +24,6 @@ func RegisterDefaultScreens(r *Router) {
 	r.Register(ScreenMain, mainScreen)
 
 	r.Register(ScreenTODO, TODOScreen)
-
 }
 
 // loginScreen is the screen for logging in.
@@ -148,7 +147,7 @@ func loginScreen(r *Router) fyne.CanvasObject {
 
 			_ = cl.StopCreatorServer()
 
-			r.Show(ScreenMain)
+			r.ClearScreenAndShow(ScreenMain)
 
 		case 3:
 			if passwordEntry.Text == "" {
@@ -170,7 +169,7 @@ func loginScreen(r *Router) fyne.CanvasObject {
 			}
 
 			_ = cl.StopCreatorServer()
-			r.Show(ScreenMain)
+			r.ClearScreenAndShow(ScreenMain)
 		}
 	}
 

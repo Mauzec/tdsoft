@@ -1,0 +1,7 @@
+venv_path = "./.venv"
+scripts_path = "./scripts"
+log_path = "./logs"
+
+session_name = "config/first"
+creator_uri = "http://127.0.0.1:9001"
+

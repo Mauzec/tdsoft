@@ -11,15 +11,19 @@ from pyrogram import Client, errors, types, enums
 from typing import AsyncGenerator, TextIO
 import utils.io as io
 
-SESSION = os.path.join(os.getcwd(), "test_account")
 
 # TODO: need to do something with flood_wait (add, ex, retry button in ui )
 # TODO: add more errors, like chat not found, instead of just rpc error
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="get public members of a TG chat")
+    
+    p.add_argument( # for future use
+        'session', type=str, help='session path (string)'
+    )
     p.add_argument(
         "chat", help="username, t.me/username, invite link(not supported yet), id")
+    
     p.add_argument('--limit', type=int, default=1000, 
                    help='maximum number of members to return (default is 1000, max is 50000)')
     
@@ -264,6 +268,9 @@ async def main():
     except Exception as e:
         io.message(None, 'error', "ARGPARSE_ERROR", error=str(e))
         
+    if not args.session:
+        io.message(None, 'error', 'NO_SESSION', when='main')
+        
     if args.limit > 50000:
         io.message(None, 'error', 'MEMBERS_LIMIT_TOO_HIGH', 
                 limit=args.limit, max=50000)
@@ -296,7 +303,7 @@ async def main():
         writer.writerow(columns)
     io.CSV_FLUSHED = True
 
-    async with Client(SESSION, api_id, api_hash) as app:
+    async with Client(args.session, api_id, api_hash) as app:
         users: Dict[int, types.User] = await fetch_members(app, name, args)
     
         if args.parse_from_messages:

@@ -17,13 +17,12 @@ import (
 )
 
 func main() {
-
-	appCfg, err := config.LoadConfig[config.AppConfig]("app", "toml", ".")
+	appCfg, err := config.LoadConfig[config.AppConfig]("app", "toml", "config", ".")
 	if err != nil {
 		panic("failed to load app config: " + err.Error())
 	}
 
-	a := app.New()
+	a := app.NewWithID("tdsoft")
 	w := a.NewWindow("tdsoft")
 	w.Resize(fyne.NewSize(400, 400))
 
@@ -44,25 +43,23 @@ func main() {
 			EncodeCaller: zapcore.ShortCallerEncoder,
 			LineEnding:   zapcore.DefaultLineEnding,
 		},
-		OutputPaths:      []string{"stdout", appCfg.AppLogPath},
-		ErrorOutputPaths: []string{"stderr", appCfg.AppLogPath},
+		OutputPaths:      []string{"stdout", appCfg.LogPath + "/app.log"},
+		ErrorOutputPaths: []string{"stderr", appCfg.LogPath + "/app.log"},
 	}
 	logger, _ := loggerConfig.Build()
 
-	cl, err := client.NewClient(logger, appCfg)
-	if err != nil {
-		if errors.Is(err, apperrors.ErrNeedAuth) {
-			logger.Info("unable to load API config, need auth", zap.Error(err))
+	cl, clientErr := client.NewClient(logger, appCfg, a)
+	if clientErr != nil {
+		if errors.Is(clientErr, apperrors.ErrNeedAuth) {
+			logger.Info("unable to load API config, need auth", zap.Error(clientErr))
 		} else {
-			logger.Fatal("failed to create client", zap.Error(err))
+			logger.Fatal("failed to create client", zap.Error(clientErr))
 		}
 	}
+	r.PutService(a)
 	r.PutService(cl)
-
 	r.PutService(w)
-
 	w.SetOnClosed(func() {
-
 		err := cl.StopCreatorServer()
 		if err != nil {
 			cl.ExtLog.Error("failed to stop creator server", zap.Error(err))
@@ -85,7 +82,7 @@ func main() {
 		os.Exit(0)
 	}()
 
-	if err != nil {
+	if clientErr != nil {
 		r.Show(ui.ScreenLogin)
 	} else {
 		r.Show(ui.ScreenMain)

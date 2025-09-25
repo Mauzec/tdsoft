@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 )
 
 type ScreenFactory func(r *Router) fyne.CanvasObject
@@ -71,6 +72,21 @@ func (r *Router) ShowWith(id ScreenID, param any) {
 	r.params[id] = param
 	r.mu.Unlock()
 	r.Show(id)
+}
+
+// ClearScreenAndShow clears current screen content and shows the new screen with given ID.
+//
+// This is useful if you want, for example, change the window size when loading a new screen.
+// Without clearing, the old content will be resized first.
+func (r *Router) ClearScreenAndShow(id ScreenID) {
+	r.win.SetContent(container.NewVBox())
+	r.Show(id)
+}
+
+// See [ShowWith] and [ClearScreenAndShow]
+func (r *Router) ClearScreenAndShowWith(id ScreenID, param any) {
+	r.win.SetContent(container.NewVBox())
+	r.ShowWith(id, param)
 }
 
 // Param retrieves the last param passed to ShowWith for a screen

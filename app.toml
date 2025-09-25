@@ -1,9 +1,0 @@
-venv_path = "./.venv"
-scripts_path = "./scripts"
-
-session_name = "my_session.session"
-auth_config_name = "tg_auth" # it always have .env extension
-creator_log_path = "creator_server.log"
-app_log_path = "app.log"
-creator_uri = "http://127.0.0.1:9001"
-

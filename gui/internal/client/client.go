@@ -13,15 +13,16 @@ import (
 	"syscall"
 	"time"
 
+	"fyne.io/fyne/v2"
 	"github.com/mauzec/tdsoft/gui/internal/config"
 	apperrors "github.com/mauzec/tdsoft/gui/internal/errors"
+	"github.com/mauzec/tdsoft/gui/internal/preferences"
 	"go.uber.org/zap"
 )
 
 type Client struct {
-	APIID   string
-	APIHash string
-
+	APIID    string
+	APIHash  string
 	NeedAuth bool
 
 	creatorCmd *exec.Cmd
@@ -32,35 +33,29 @@ type Client struct {
 	defaultPyOutHandlers map[string]OutHandler
 	defaultPyErrHandlers map[string]ErrHandler
 
-	cfg *config.AppConfig
+	cfg   *config.AppConfig
+	prefs fyne.Preferences
 }
 
-func NewClient(extendedLogger *zap.Logger, appCfg *config.AppConfig) (*Client, error) {
+func NewClient(extendedLogger *zap.Logger, appCfg *config.AppConfig, a fyne.App) (*Client, error) {
 	cl := &Client{}
-	var err error
-
 	cl.cfg = appCfg
 	if extendedLogger == nil {
 		return cl, apperrors.ErrExtendedLoggerNotProvided
 	}
 	cl.ExtLog = extendedLogger
 
-	_, statErr := os.Stat(cl.cfg.Session + ".session")
-	cfg, err := config.LoadConfig[config.TGAPIConfig](appCfg.AuthConfigName, "env", ".")
-	if statErr != nil || err != nil {
-		cl.NeedAuth = true
-		_ = cl.DeleteSession()
-		return cl, errors.Join(apperrors.ErrNeedAuth, err)
+	if a == nil {
+		return cl, errors.New("fyne.App=nil provided")
 	}
-	cl.APIID = cfg.APIID
-	cl.APIHash = cfg.APIHash
+	cl.prefs = a.Preferences()
+
 	cl.defaultPyOutHandlers = map[string]OutHandler{
 		"FLOOD_WAIT": func(t string, pm *PyMsg) {
 			cl.ExtLog.Warn("flood wait", zap.Any("details", pm.Details))
 			_ = cl.UserLog(2, fmt.Sprintf(
-				"Flood wait: %d seconds, program will pause. You can stop it, data has been saved",
-				pm.Details["seconds"]),
-			)
+				"Flood wait: %v seconds, program will pause. You can stop it, data has been saved",
+				pm.Details["seconds"]))
 		},
 		"CSV_FLUSH_ERROR": func(t string, pm *PyMsg) {
 			cl.ExtLog.Warn("csv flush error", zap.Any("details", pm.Details))
@@ -68,16 +63,24 @@ func NewClient(extendedLogger *zap.Logger, appCfg *config.AppConfig) (*Client, e
 		},
 		"ALL_DONE": func(t string, pm *PyMsg) {
 			cl.ExtLog.Info("all done", zap.Any("details", pm.Details))
-			_ = cl.UserLog(1, "All done, result in "+pm.Details["output"].(string))
+			if out, ok := pm.Details["output"].(string); ok {
+				_ = cl.UserLog(1, "All done, result in "+out)
+			} else {
+				_ = cl.UserLog(1, "All done")
+			}
 		},
 		"SCRIPT_STARTED": func(t string, pm *PyMsg) {
 			cl.ExtLog.Info("script started", zap.Any("details", pm.Details))
 		},
 	}
 	cl.defaultPyErrHandlers = map[string]ErrHandler{
+		"SCRIPT_UNCAUGHT_ERROR": func(pm *PyMsg) {
+			cl.ExtLog.Error("uncaught error", zap.Any("details", pm.Details))
+			_ = cl.UserLog(3, "something went wrong")
+		},
 		"TASK_CANCELLED": func(pm *PyMsg) {
 			cl.ExtLog.Error("task cancelled", zap.Any("details", pm.Details))
-			_ = cl.UserLog(2, "Task cancelled by system")
+			_ = cl.UserLog(2, "task cancelled by system")
 		},
 		"RPC_ERROR": func(pm *PyMsg) {
 			cl.ExtLog.Error("rpc error", zap.Any("details", pm.Details))
@@ -85,39 +88,54 @@ func NewClient(extendedLogger *zap.Logger, appCfg *config.AppConfig) (*Client, e
 		},
 		"UNEXPECTED_ERROR": func(pm *PyMsg) {
 			cl.ExtLog.Error("unexpected error", zap.Any("details", pm.Details))
-			_ = cl.UserLog(3, "Unexpected error occurred")
+			_ = cl.UserLog(3, "unexpected error occurred")
 		},
 		"ARGPARSE_ERROR": func(pm *PyMsg) {
 			cl.ExtLog.Error("argument parse error", zap.Any("details", pm.Details))
 		},
-		"SCRIPT_UNCAUGHT_ERROR": func(pm *PyMsg) {
-			cl.ExtLog.Error("script failed", zap.Any("details", pm.Details))
+		"NO_SESSION": func(pm *PyMsg) {
+			cl.ExtLog.Error("no session provided", zap.Any("details", pm.Details))
 		},
+	}
+
+	APIID := strings.TrimSpace(cl.prefs.String(preferences.KeyTGAPIID))
+	APIHash := strings.TrimSpace(cl.prefs.String(preferences.KeyTGAPIHash))
+	if _, err := os.Stat(appCfg.Session + ".session"); err != nil ||
+		cl.cfg.ForceAuth || APIID == "" || APIHash == "" {
+		cl.NeedAuth = true
+		_ = os.Remove(cl.cfg.Session + ".session")
+		return cl, apperrors.ErrNeedAuth
 	}
 
 	return cl, nil
 }
 
 func (cl *Client) DeleteSession() error {
-	if err := os.Remove(cl.cfg.AuthConfigName + ".env"); err != nil {
-		return errors.Join(apperrors.ErrSystemError, err)
-	}
-	if err := os.Remove(cl.cfg.Session + ".session"); err != nil {
-		return errors.Join(apperrors.ErrSystemError, err)
-	}
+	cl.prefs.SetString(preferences.KeyTGAPIID, "")
+	cl.prefs.SetString(preferences.KeyTGAPIHash, "")
+	cl.prefs.SetString(preferences.KeyTGPhone, "")
+
+	_ = os.Remove(cl.cfg.Session + ".session")
 	return nil
 }
 
+func (cl *Client) GetDialogs() error {
+	// TODO:
+	return nil
+}
+
+func (cl *Client) CheckConnection() (context.Context, error) {
+	// TODO:
+	return context.Background(), nil
+}
+
 func (cl *Client) SaveAPIConfig() error {
-	cfg := config.TGAPIConfig{
-		APIID:   cl.APIID,
-		APIHash: cl.APIHash,
-	}
-	return config.SaveConfig(&cfg, cl.cfg.AuthConfigName, "env")
+	cl.prefs.SetString(preferences.KeyTGAPIID, strings.TrimSpace(cl.APIID))
+	cl.prefs.SetString(preferences.KeyTGAPIHash, strings.TrimSpace(cl.APIHash))
+	return nil
 }
 
 func (cl *Client) StartCreatorServer() error {
-
 	wait := func(timeout time.Duration) error {
 		dl := time.Now().Add(timeout)
 		for time.Now().Before(dl) {
@@ -131,7 +149,7 @@ func (cl *Client) StartCreatorServer() error {
 
 	cmd := exec.Command(cl.cfg.VenvPath+"/bin/python3", cl.cfg.ScriptsPath+"/connect.py")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	logf, _ := os.OpenFile(cl.cfg.CreatorLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	logf, _ := os.OpenFile(cl.cfg.LogPath+"/creator_server.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	cmd.Stdout = logf
 	cmd.Stderr = logf
 	if err := cmd.Start(); err != nil {
@@ -145,7 +163,13 @@ func (cl *Client) StartCreatorServer() error {
 		return err
 	}
 
+	err = cl.sendSessionPath()
+	if err != nil {
+		_ = cl.StopCreatorServer()
+		return err
+	}
 	cl.ExtLog.Info("creator server started", zap.Int("pid", cmd.Process.Pid))
+
 	return nil
 }
 
@@ -154,7 +178,7 @@ func (cl *Client) StopCreatorServer() error {
 		return nil
 	}
 
-	// try gracefu http shutdown, but proceed regardless of error
+	// try gracefu http shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, "GET", cl.cfg.CreatorURI+"/shutdown", nil)
@@ -185,6 +209,35 @@ func (cl *Client) StopCreatorServer() error {
 	}
 }
 
+func (cl *Client) sendSessionPath() error {
+	if err := cl.pingCreatorServer(); err != nil {
+		return err
+	}
+
+	v := url.Values{}
+	v.Set("path", "../"+cl.cfg.Session)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "POST", cl.cfg.CreatorURI+"/session_path?"+v.Encode(), nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	res := map[string]string{}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return err
+	}
+	if errMsg, ok := res["error"]; ok {
+		return fmt.Errorf("send session path error: %s", errMsg)
+	}
+
+	cl.ExtLog.Info("/session_path response", zap.Any("response", res))
+
+	return nil
+}
+
 func (cl *Client) SendAPIData() error {
 	if err := cl.pingCreatorServer(); err != nil {
 		return err
@@ -195,7 +248,7 @@ func (cl *Client) SendAPIData() error {
 	v.Set("api_hash", cl.APIHash)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, "GET", cl.cfg.CreatorURI+"/api_data?"+v.Encode(), nil)
+	req, _ := http.NewRequestWithContext(ctx, "POST", cl.cfg.CreatorURI+"/api_data?"+v.Encode(), nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
@@ -210,6 +263,8 @@ func (cl *Client) SendAPIData() error {
 		return fmt.Errorf("send api data error: %s", errMsg)
 	}
 
+	cl.ExtLog.Info("/api_data response", zap.Any("response", res))
+
 	return nil
 }
 
@@ -222,7 +277,7 @@ func (cl *Client) SendPhone(phone string) error {
 	v.Set("phone", phone)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, "GET", cl.cfg.CreatorURI+"/send_code?"+v.Encode(), nil)
+	req, _ := http.NewRequestWithContext(ctx, "POST", cl.cfg.CreatorURI+"/send_code?"+v.Encode(), nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
@@ -237,6 +292,8 @@ func (cl *Client) SendPhone(phone string) error {
 		return fmt.Errorf("send phone error: %s", errMsg)
 	}
 
+	cl.ExtLog.Info("/send_code response", zap.Any("response", res))
+
 	return nil
 }
 
@@ -250,7 +307,7 @@ func (cl *Client) SignIn(phone, code string) error {
 	v.Set("code", code)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, "GET", cl.cfg.CreatorURI+"/sign_in?"+v.Encode(), nil)
+	req, _ := http.NewRequestWithContext(ctx, "POST", cl.cfg.CreatorURI+"/sign_in?"+v.Encode(), nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
@@ -268,6 +325,8 @@ func (cl *Client) SignIn(phone, code string) error {
 		return fmt.Errorf("sign in error: %s", errMsg)
 	}
 
+	cl.ExtLog.Info("/sign_in response", zap.Any("response", res))
+
 	return nil
 }
 
@@ -280,7 +339,7 @@ func (cl *Client) CheckPassword(password string) error {
 	v.Set("password", password)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, "GET", cl.cfg.CreatorURI+"/check_password?"+v.Encode(), nil)
+	req, _ := http.NewRequestWithContext(ctx, "POST", cl.cfg.CreatorURI+"/check_password?"+v.Encode(), nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
@@ -294,6 +353,8 @@ func (cl *Client) CheckPassword(password string) error {
 	if errMsg, ok := res["error"]; ok {
 		return fmt.Errorf("check password error: %s", errMsg)
 	}
+
+	cl.ExtLog.Info("/check_password response", zap.Any("response", res))
 
 	return nil
 }
@@ -344,8 +405,10 @@ func (cl *Client) UserLog(level int, msg string) error {
 	return nil
 }
 
-// func (cl *Client) SetEmpty() {
-// 	cl.APIID = ""
-// 	cl.APIHash = ""
-// 	cl.NeedAuth = true
-// }
+func (cl *Client) ensureUserLogF() error {
+	if cl.UserLogF == nil {
+		cl.ExtLog.Error("no user log function to set")
+		return errors.New("no user log function set")
+	}
+	return nil
+}

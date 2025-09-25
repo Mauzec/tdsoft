@@ -19,7 +19,6 @@ from statistics import median
 Search messages in a group/channel/private
 '''
 
-SESSION = os.path.join(os.getcwd(), "test_account")
 COLUMNS = ['message_id', 'text', 'date']
 
 def parse_args() -> argparse.Namespace:
@@ -27,6 +26,9 @@ def parse_args() -> argparse.Namespace:
         description='''Search messages in a group/channel/private chat by keywords. 
         WARNING: without --limit-history it will read all history of the chat. ''')
     
+    p.add_argument( # for future use
+        'session', type=str, help='session path (string)'
+    )
     p.add_argument(
         "chat", help="username, t.me/username, id")
     p.add_argument(
@@ -157,6 +159,9 @@ async def main():
         args = parse_args()
     except Exception as e:
         io.message(None, 'error', "ARGPARSE_ERROR", error=str(e))
+    
+    if not args.session:
+        io.message(None, 'error', 'NO_SESSION', when='main')
         
     if not args.from_date:
         io.message(None, 'error', "FROM_DATE_REQUIRED", error="from_date is required")
@@ -197,7 +202,7 @@ async def main():
         writer.writerow(COLUMNS)
     io.CSV_FLUSHED = True
     
-    async with Client(SESSION, api_id=api_id, api_hash=api_hash) as app:
+    async with Client(args.session, api_id=api_id, api_hash=api_hash) as app:
         await fetch_messages(app, args)
         
         io.message(None, 'info', 'ALL_DONE', output=os.path.abspath(args.output))

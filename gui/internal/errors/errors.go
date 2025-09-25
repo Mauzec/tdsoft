@@ -15,4 +15,5 @@ var (
 	ErrOnlyDigitsAllowed       = errors.New("only digits are allowed")
 	ErrFieldRequired           = errors.New("field is required")
 	ErrNumericConversionFailed = errors.New("conversion failed")
+	ErrValidationFailed        = errors.New("validation failed")
 )

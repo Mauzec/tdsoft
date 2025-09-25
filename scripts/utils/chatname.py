@@ -2,6 +2,8 @@ from typing import Tuple
 import regex as re
 from enum import Enum, auto
 from urllib.parse import urlparse
+from typing_extensions import deprecated
+from warnings import warn
 
 class ChatNameKind(Enum):
     def _generate_next_value_(self, *args):
@@ -14,10 +16,10 @@ class ChatNameKind(Enum):
     CHAT_ID = auto()
     
     def __repr__(self):
-        return f'mauzec.{self}'
+        return f'py_tdsoft.{self}'
     
 
-        
+@deprecated("This function will be removed in futere, because its functionality transferred to UI layer.")
 def parse_chat_name(name: str) -> Tuple[ChatNameKind, str]:
     '''
     Determines whether the given string is a TG-link(invite or direct), or username, or chat Id.\n
@@ -54,7 +56,7 @@ def parse_chat_name(name: str) -> Tuple[ChatNameKind, str]:
     username = name[1:] if name.startswith('@') else name
     if not username:
         return (ChatNameKind.EMPTY, '')
-    if re.fullmatch(r'[A-Za-z0-9_]{2,32}', username):
+    if re.fullmatch(r'[A-Za-z0-9_]{4,32}', username):
         return (ChatNameKind.USERNAME, username)
     if name.startswith('@'):
         return (ChatNameKind.EMPTY, '')

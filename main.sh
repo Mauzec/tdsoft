@@ -2,4 +2,4 @@
 pwd
 set -euo pipefail
 cd "$(dirname "$0")"
-exec go run ./gui/cmd/main.go "$@"
+exec go run ./gui/cmd/tds/main.go "$@"

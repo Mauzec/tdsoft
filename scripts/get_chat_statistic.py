@@ -14,14 +14,19 @@ from datetime import datetime, date
 from collections import defaultdict
 from statistics import median
 
-SESSION = os.path.join(os.getcwd(), "test_account")
-
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description='''Get chat statistics. 
         WARNING: without --history-limit it will read all history of the chat. ''')
+    
+    p.add_argument(
+        'session', type=str, help='session path (string)'
+    )
     p.add_argument(
         "chat", help="username, t.me/username, invite link(not supported yet), id")
+    p.add_argument(
+        "--invite-link", action='store_true', help='use if chat is an invite link')
+    
     p.add_argument(
         "--output", type=str, default=f'get-statistics-{int(time.time())}.csv',
         help="output csv file path; default is get-chat-statistics-<time>.csv")
@@ -181,6 +186,9 @@ async def main():
     except Exception as e:
         io.message(None, 'error', "ARGPARSE_ERROR", error=str(e))
 
+    if not args.session:
+        io.message(None, 'error', 'NO_SESSION', when='main')
+    
     options: Dict[str, Any] = get_tdlib_options()
     api_id: int = options["api_id"]
     api_hash: str = options["api_hash"]    
@@ -197,7 +205,7 @@ async def main():
         writer.writerow(COLUMNS)
     io.CSV_FLUSHED = True
         
-    async with Client(SESSION, api_id, api_hash) as app:
+    async with Client(args.session, api_id, api_hash) as app:
         await get_statistics(app, name, args)
         
         io.message(None, 'info', 'ALL_DONE', output=os.path.abspath(args.output))

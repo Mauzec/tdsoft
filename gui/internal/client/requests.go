@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 
+	"github.com/go-playground/validator/v10"
 	"go.uber.org/zap"
 )
 
@@ -45,166 +45,154 @@ func ComposeOnErr(base, extra map[string]ErrHandler) ErrHandler {
 	}
 }
 
+// All request fields are required.
+
 type Request interface {
 	Validate() error
 }
 
 type GetMembersRequest struct {
 	// ChatID is either a username(t.me/chat, chat, @chat),
-	// a chatID (not peerID), or invite link. Required
+	// a chatID (not peerID), or invite link.
 	//
 	// TODO: invite link not supported yet.
-	ChatID string
+	ChatID string `validate:"required"`
+
+	// InviteLink says if chat is an invite link.
+	InviteLink bool `validate:"-"`
 
 	// Limit is the maximum number of members to return.
-	// The default is 1000, and the maximum is 50,000.
-	Limit int
+	// The maximum is 50,000.
+	Limit int `validate:"min=1,max=50000"`
 
 	// Output is the path to the CSV file where
-	// results will be saved. The default is
-	// "./get-members-<timestamp>.csv".
-	Output string
+	// results will be saved.
+	Output string `validate:"min=1,filepath"`
 
 	// ParseFromMessages parses users/bots from messages if true.
 	// Default is false.
-	ParseFromMessages bool
+	ParseFromMessages bool `validate:"-"`
 
 	// MessagesLimit is the number of messages to parse
-	// if ParseFromMessages is true. The default is 10,
-	// and the maximum is 5000.
-	MessagesLimit int
+	// if ParseFromMessages is true. The maximum is 5000.
+	// Validate if ParseFromMessages is true.
+	MessagesLimit int `validate:"omitempty,min=1,max=5000"`
 
 	// TODO: not implemented yet.
-	ExcludeBots bool
+	ExcludeBots bool `validate:"-"`
 
 	// ParseBio parses users' bio.
-	// This may slow down the process. Default is false.
-	ParseBio bool
+	// This may slow down the process.
+	ParseBio bool `validate:"-"`
 
 	// AddAdditionalInfo adds additional information about users,
 	// such as bio, premium, scam flag, etc.
-	// Default is false.
-	AddAdditionalInfo bool
+	AddAdditionalInfo bool `validate:"-"`
 
 	// AutoJoin automatically joins the chat if true.
 	//
 	// TODO: not implemented yet
-	AutoJoin bool
+	AutoJoin bool `validate:"-"`
 }
 
 func (req *GetMembersRequest) Validate() error {
-	req.ChatID = strings.TrimSpace(req.ChatID)
-	if req.ChatID == "" {
-		return errors.New("ChatID is required")
+	if req.ParseFromMessages && req.MessagesLimit == 0 {
+		return errors.New("get zero messages limit, but parse from messages is true")
 	}
-	if req.Limit < 0 || req.Limit > 50000 {
-		return errors.New("Limit must be between 1 and 50,000")
-	}
-	if req.ParseFromMessages && (req.MessagesLimit < 0 || req.MessagesLimit > 5000) {
-		return errors.New("MessagesLimit must be between 1 and 5000")
-	}
-	req.Output = strings.TrimSpace(req.Output)
-	return nil
+	return validator.New().Struct(req)
 }
 
 type GetChatStatsRequest struct {
 	// ChatID is either a username(t.me/chat, chat, @chat),
-	// a chatID (not peerID), or invite link. Required
+	// a chatID (not peerID), or invite link.
 	//
 	// TODO: invite link not supported yet.
-	ChatID string
+	ChatID string `validate:"required"`
+
+	// InviteLink says if chat is an invite link.
+	InviteLink bool `validate:"-"`
 
 	// MessagesLimit is the number of messages to parse
-	// The default is 0 (all messages), no max value
-	MessagesLimit int
+	// No max value, 0 means all messages
+	MessagesLimit int `validate:"min=0"`
 
 	// Output is the path to the CSV file where
-	// results will be saved. The default is
-	// "./get-chat-statistics-<timestamp>.csv".
-	Output string
+	// results will be saved.
+	Output string `validate:"min=1,filepath"`
 }
 
 func (req *GetChatStatsRequest) Validate() error {
-	req.ChatID = strings.TrimSpace(req.ChatID)
-	if req.ChatID == "" {
-		return errors.New("ChatID is required")
-	}
-	if req.MessagesLimit < 0 {
-		return errors.New("MessagesLimit must be greater or equal to 0")
-	}
-	req.Output = strings.TrimSpace(req.Output)
-	return nil
+	return validator.New().Struct(req)
 }
 
 type SearchMessagesRequest struct {
 	// ChatID is either a username(t.me/chat, chat, @chat),
-	// a chatID (not peerID), or invite link. Required
+	// a chatID (not peerID), or invite link.
 	//
 	// TODO: invite link not supported yet.
-	ChatID string
+	ChatID string `validate:"required"`
+
+	// InviteLink says if chat is an invite link.
+	InviteLink bool `validate:"-"`
 
 	// Username is a username(t.me/user, user, @user)
 	// Required
-	Username string
+	Username string `validate:"required"`
 
 	// Output is the path to the CSV file where
-	// results will be saved. The default is
-	// "./search-messages-<username>-<timestamp>.csv".
-	Output string
+	// results will be saved.
+	Output string `validate:"min=1,filepath"`
 
 	// FromDate is the start date in MM/DD/YYYY format.
-	FromDate string
+	// Required
+	FromDate string `validate:"required"`
 
 	// ToDate is the end date in MM/DD/YYYY format.
-	ToDate string
+	// Required
+	ToDate string `validate:"required"`
 }
 
 func (req *SearchMessagesRequest) Validate() error {
-	req.ChatID = strings.TrimSpace(req.ChatID)
-	if req.ChatID == "" {
-		return errors.New("ChatID is required")
-	}
-	req.Username = strings.TrimSpace(req.Username)
-	if req.Username == "" {
-		return errors.New("Username is required")
-	}
-	if req.FromDate == "" {
-		return errors.New("FromDate is required")
-	}
-	if req.ToDate == "" {
-		return errors.New("ToDate is required")
-	}
-	req.Output = strings.TrimSpace(req.Output)
-	return nil
+	return validator.New().Struct(req)
+}
+
+type PrintDialogsRequest struct {
+	// Limit is the maximum number of dialogs to receive.
+	// No max value
+	Limit int `validate:"min=1"`
+
+	// InviteLink says if chat is an invite link.
+	InviteLink bool `validate:"-"`
+
+	// Output is the path to the CSV file where
+	// results will be saved.
+	Output string `validate:"min=1,filepath"`
 }
 
 // GetMembers get members of a group/channel if possible
 func (cl *Client) GetMembers(req *GetMembersRequest, validate bool) error {
-	if cl.UserLogF == nil {
-		cl.ExtLog.Error("no user log function to set")
-		return errors.New("no user log function set")
+	if err := cl.ensureUserLogF(); err != nil {
+		return err
 	}
 	if validate {
 		if err := req.Validate(); err != nil {
-			cl.ExtLog.Warn("validating get members request failed", zap.Error(err))
+			cl.ExtLog.Error(
+				"validating get members request failed",
+				zap.Error(err),
+			)
 			return err
 		}
 	}
+	cl.ExtLog.Info("get members", zap.Any("request", req))
 
 	args := []string{cl.cfg.ScriptsPath + "/get_members.py"}
-	args = append(args, req.ChatID)
-
-	if req.Limit > 0 {
-		args = append(args, "--limit", strconv.Itoa(req.Limit))
-	}
-	if req.Output != "" {
-		args = append(args, "--output", req.Output)
-	}
+	args = append(args, "../"+cl.cfg.Session, req.ChatID)
+	args = append(args, "--limit", strconv.Itoa(req.Limit))
+	args = append(args, "--output", req.Output)
 	if req.ParseFromMessages {
 		args = append(args, "--parse-from-messages")
-		if req.MessagesLimit > 0 {
-			args = append(args, "--messages-limit", strconv.Itoa(req.MessagesLimit))
-		}
+		args = append(args, "--messages-limit", strconv.Itoa(req.MessagesLimit))
+
 	}
 	if req.ParseBio {
 		args = append(args, "--parse-bio")
@@ -257,7 +245,6 @@ func (cl *Client) GetMembers(req *GetMembersRequest, validate bool) error {
 	onErr := ComposeOnErr(cl.defaultPyErrHandlers, extraErr)
 
 	if err := runPyWithStreaming(cl.cfg.VenvPath, args, onOut, onErr); err != nil {
-		_ = cl.UserLog(3, "something went wrong")
 		return err
 	}
 	return nil
@@ -270,19 +257,20 @@ func (cl *Client) GetChatStats(req *GetChatStatsRequest, validate bool) error {
 	}
 	if validate {
 		if err := req.Validate(); err != nil {
-			cl.ExtLog.Warn("validating get chat stats request failed", zap.Error(err))
+			cl.ExtLog.Error("validating get chat stats request failed",
+				zap.Error(err),
+			)
 			return err
 		}
 	}
+	cl.ExtLog.Info("get chat stats", zap.Any("request", req))
 
 	args := []string{cl.cfg.ScriptsPath + "/get_chat_statistic.py"}
-	args = append(args, req.ChatID)
-
-	if req.MessagesLimit > 0 {
-		args = append(args, "--history-limit", strconv.Itoa(req.MessagesLimit))
-	}
-	if req.Output != "" {
-		args = append(args, "--output", req.Output)
+	args = append(args, "../"+cl.cfg.Session, req.ChatID)
+	args = append(args, "--messages-limit", strconv.Itoa(req.MessagesLimit))
+	args = append(args, "--output", req.Output)
+	if req.InviteLink {
+		args = append(args, "--invite-link")
 	}
 
 	extraOut := map[string]OutHandler(nil)
@@ -302,7 +290,6 @@ func (cl *Client) GetChatStats(req *GetChatStatsRequest, validate bool) error {
 	onErr := ComposeOnErr(cl.defaultPyErrHandlers, extraErr)
 
 	if err := runPyWithStreaming(cl.cfg.VenvPath, args, onOut, onErr); err != nil {
-		_ = cl.UserLog(3, "something went wrong")
 		return err
 	}
 	return nil
@@ -315,14 +302,17 @@ func (cl *Client) SearchMessages(req *SearchMessagesRequest, validate bool) erro
 	}
 	if validate {
 		if err := req.Validate(); err != nil {
-			cl.ExtLog.Warn("validating search messages request failed", zap.Error(err))
+			cl.ExtLog.Error(
+				"validating search messages request failed",
+				zap.Error(err),
+			)
 			return err
 		}
 	}
+	cl.ExtLog.Info("searching messages", zap.Any("request", req))
 
 	args := []string{cl.cfg.ScriptsPath + "/search_messages.py"}
-	args = append(args, req.ChatID)
-	args = append(args, req.Username)
+	args = append(args, "../"+cl.cfg.Session, req.ChatID, req.Username)
 
 	if req.Output != "" {
 		args = append(args, "--output", req.Output)
@@ -376,7 +366,40 @@ func (cl *Client) SearchMessages(req *SearchMessagesRequest, validate bool) erro
 	onErr := ComposeOnErr(cl.defaultPyErrHandlers, extraErr)
 
 	if err := runPyWithStreaming(cl.cfg.VenvPath, args, onOut, onErr); err != nil {
-		_ = cl.UserLog(3, "something went wrong")
+		return err
+	}
+
+	return nil
+}
+
+func (cl *Client) PrintDialogs(req *PrintDialogsRequest, validate bool) error {
+	if cl.UserLogF == nil {
+		cl.ExtLog.Error("no user log function to set")
+		return errors.New("no user log function set")
+	}
+	if validate {
+		if err := validator.New().Struct(req); err != nil {
+			cl.ExtLog.Error(
+				"validating print dialogs request failed",
+				zap.Error(err),
+			)
+			return err
+		}
+	}
+
+	args := []string{cl.cfg.ScriptsPath + "/print_dialogs.py"}
+	args = append(args, "../"+cl.cfg.Session)
+
+	if req.Limit > 0 {
+		args = append(args, "--limit", strconv.Itoa(req.Limit))
+	}
+	if req.Output != "" {
+		args = append(args, "--output", req.Output)
+	}
+
+	if err := runPyWithStreaming(cl.cfg.VenvPath, args,
+		ComposeOnOut(cl.defaultPyOutHandlers, nil),
+		ComposeOnErr(cl.defaultPyErrHandlers, nil)); err != nil {
 		return err
 	}
 

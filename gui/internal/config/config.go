@@ -22,13 +22,12 @@ type TGAPIConfig struct {
 }
 
 type AppConfig struct {
-	VenvPath       string `mapstructure:"venv_path" validate:"required"`
-	ScriptsPath    string `mapstructure:"scripts_path" validate:"required"`
-	Session        string `mapstructure:"session_name" validate:"required,filepath"`
-	AuthConfigName string `mapstructure:"auth_config_name" validate:"required"`
-	CreatorLogPath string `mapstructure:"creator_log_path" validate:"required,filepath"`
-	AppLogPath     string `mapstructure:"app_log_path" validate:"required,filepath"`
-	CreatorURI     string `mapstructure:"creator_uri" validate:"required,uri"`
+	VenvPath    string `mapstructure:"venv_path" validate:"required"`
+	ScriptsPath string `mapstructure:"scripts_path" validate:"required"`
+	Session     string `mapstructure:"session_name" validate:"required,filepath"`
+	LogPath     string `mapstructure:"log_path" validate:"required,dirpath"`
+	CreatorURI  string `mapstructure:"creator_uri" validate:"required,uri"`
+	ForceAuth   bool   `mapstructure:"force_auth"`
 }
 
 func LoadConfig[T any](name, ext string, paths ...string) (*T, error) {

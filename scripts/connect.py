@@ -18,20 +18,22 @@ except Exception:
 app = FastAPI()
 server = None
 
-SESSION = os.path.join(os.getcwd(), "test_account")
-
 client: Optional[Client] = None
 sent_code_data: Optional[uvicorn.Server] = None
+    
+SESSION = ""
     
 @app.get('/ping')
 async def ping(message: str = 'ping'):
     return {'message': 'pong' if message == 'ping' else 'saimon'}
 
-# todo
-# @app.get("/auth_status")
-
+@app.post('/session_path')
+async def session_path(path: str):
+    global SESSION
+    SESSION = path
+    return {'message': f'session path set to {SESSION}'}
     
-@app.get('/api_data')
+@app.post('/api_data')
 async def api_data(api_id: str, api_hash: str):
     global client
     client = Client(SESSION, api_id, api_hash)
@@ -39,10 +41,10 @@ async def api_data(api_id: str, api_hash: str):
         await client.connect()
     except Exception as e:
         return {'error': str(e)}
-    return {'message': 'client initialized'}
+    return {'message': 'client initialized', 'session': SESSION}
         
 
-@app.get('/send_code')
+@app.post('/send_code')
 async def send_code(phone: str):
     global client
     global sent_code_data
@@ -54,7 +56,7 @@ async def send_code(phone: str):
         return {'error': str(e)}
     return {'message': 'code sent'}
 
-@app.get('/sign_in')
+@app.post('/sign_in')
 async def sign_in(phone: str, code: str):
     global client
     if client is None:
@@ -71,7 +73,7 @@ async def sign_in(phone: str, code: str):
 
     return {'message': 'signed in'}
 
-@app.get('/check_password')
+@app.post('/check_password')
 async def check_password(password: str):
     global client
     if client is None:
@@ -94,36 +96,6 @@ async def get_me():
         return {'error': str(e)}
     return {'id': me.id, 'first_name': me.first_name, 'username': me.username}
 
-@app.get('/remove_session')
-async def remove_session():
-    global client
-    if client is None:
-        return {'error': 'client is not initialized'}
-    
-    try:
-        await client.invoke(raw.functions.auth.LogOut())
-    except Exception as e:
-        return {'error': str(e)}
-    
-    error: str = ''
-    try:
-        await client.stop()
-    except Exception as e:
-        error += f'stop error: {str(e)}; '
-    
-    try:
-        await client.storage.delete()
-    except Exception as e:
-        error += f'delete error: {str(e)}; '
-        
-    # just in case
-    system(f'rm -f {SESSION}.session')
-    
-    if error:
-        return {'message': 'session removed', 'error': error}
-    else:
-        return {'message': 'session removed'}
-
 @app.get('/shutdown')
 async def shutdown():
     global server
@@ -132,9 +104,8 @@ async def shutdown():
     server.should_exit = True
     return {'message': 'server shutting down'}
 
-def read_host_port(filename: str, *paths: str) -> Tuple[str, int]:
 
-        
+def read_host_port(filename: str, *paths: str) -> Tuple[str, int]:
     config_paths = [ os.path.join(p, filename) for p in paths ]
     
     conf = {}

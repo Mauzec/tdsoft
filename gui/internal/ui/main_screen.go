@@ -1,14 +1,16 @@
 package ui
 
 import (
+	"math"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	"github.com/mauzec/tdsoft/gui/internal/client"
+	"github.com/mauzec/tdsoft/gui/internal/preferences"
+	"github.com/mauzec/tdsoft/gui/internal/ui/custom"
 	"github.com/mauzec/tdsoft/gui/internal/utils"
 	"go.uber.org/zap"
 )
@@ -17,95 +19,39 @@ const (
 	ScreenMain ScreenID = "main"
 )
 
-type ParserMembersState struct {
-	Chat              binding.String
-	Limit             binding.String
-	Output            binding.String
-	ParseFromMessages binding.Bool
-	MessagesLimit     binding.String
-	ExcludeBots       binding.Bool
-	ParseBio          binding.Bool
-	AddAdditional     binding.Bool
-	AutoJoin          binding.Bool
-}
-
-type ChatStatsState struct {
-	Chat          binding.String
-	MessagesLimit binding.String
-	Output        binding.String
-}
-
-type SearchMessagesState struct {
-	Chat     binding.String
-	Username binding.String
-	Output   binding.String
-	FromDate binding.String
-	ToDate   binding.String
-}
-
-type UIMainState struct {
-	ParserMembers  *ParserMembersState
-	ChatStats      *ChatStatsState
-	SearchMessages *SearchMessagesState
-}
-
-func NewUIState() *UIMainState {
-	return &UIMainState{
-		ParserMembers: &ParserMembersState{
-			Chat:              binding.NewString(),
-			Limit:             binding.NewString(),
-			Output:            binding.NewString(),
-			ParseFromMessages: binding.NewBool(),
-			MessagesLimit:     binding.NewString(),
-			ExcludeBots:       binding.NewBool(),
-			ParseBio:          binding.NewBool(),
-			AddAdditional:     binding.NewBool(),
-			AutoJoin:          binding.NewBool(),
-		},
-		ChatStats: &ChatStatsState{
-			Chat:          binding.NewString(),
-			MessagesLimit: binding.NewString(),
-			Output:        binding.NewString(),
-		},
-		SearchMessages: &SearchMessagesState{
-			Chat:     binding.NewString(),
-			Username: binding.NewString(),
-			Output:   binding.NewString(),
-			FromDate: binding.NewString(),
-			ToDate:   binding.NewString(),
-		},
-	}
-}
-
 // chatStatsMenu gets chat statistics. It is the part of mainScreen
 //
-//	Services: *client.Client, *UIMainState
+//	Services: *client.Client, fyne.App
 func chatStatsMenu(r *Router) fyne.CanvasObject {
 	var (
 		cl *client.Client
-		st *UIMainState
+		a  fyne.App
 	)
-	_ = r.GetServiceAs(&st)
 	_ = r.GetServiceAs(&cl)
+	_ = r.GetServiceAs(&a)
+	prefs := a.Preferences()
 
 	header := widget.NewLabelWithStyle("Chat statistics",
 		fyne.TextAlignCenter, fyne.TextStyle{Bold: true},
 	)
 
 	chatNameLabel := widget.NewLabel("Channel or group")
-	chatNameEntry := widget.NewEntryWithData(st.ChatStats.Chat)
+	chatNameEntry := widget.NewEntry()
 	chatNameEntry.SetPlaceHolder("@chat or t.me/username or id")
 	chatNameEntry.Validator = nil
+	chatNameEntry.SetText(prefs.String(preferences.KeyUIChatStatsMenuChat))
 
 	limitMessagesLabel := widget.NewLabel("Messages limit")
-	limitMessagesEntry := widget.NewEntryWithData(st.ChatStats.MessagesLimit)
-	limitMessagesEntry.SetPlaceHolder("default: 0 (all)")
+	limitMessagesEntry := custom.NewNumericalEntry()
+	limitMessagesEntry.SetPlaceHolder("0..∞ (0 = all)")
 	limitMessagesEntry.Validator = nil
+	limitMessagesEntry.SetText(prefs.String(preferences.KeyUIChatStatsMenuLimit))
 
 	outputLabel := widget.NewLabel("Output CSV")
-	outputEntry := widget.NewEntryWithData(st.ChatStats.Output)
-	outputEntry.SetPlaceHolder("Optional, e.g. stats.csv")
+	outputEntry := widget.NewEntry()
+	outputEntry.SetPlaceHolder("e.g. stats.csv")
 	outputEntry.Validator = nil
+	outputEntry.SetText(prefs.String(preferences.KeyUIChatStatsMenuOutput))
 
 	parseButton := widget.NewButton("Parse", nil)
 	parseButton.OnTapped = func() {
@@ -128,45 +74,51 @@ func chatStatsMenu(r *Router) fyne.CanvasObject {
 
 		req := &client.GetChatStatsRequest{}
 
-		chat, _ := st.ChatStats.Chat.Get()
-		if err := utils.PreValidateChatName(chat); err != nil {
+		chatKind, chat := utils.ValidateChatName(chatNameEntry.Text)
+		if chatKind == utils.ChatNameEmpty {
 			cl.ExtLog.Warn("bad chat name",
-				zap.String("chat", chat), zap.Error(err),
-			)
+				zap.String("chat", chat))
 			enableAll()
 			return
 		}
 		req.ChatID = chat
+		req.InviteLink = chatKind == utils.ChatNameInviteLink
 
-		if v, err := st.ChatStats.MessagesLimit.Get(); err != nil {
-			cl.ExtLog.Warn("something wrong getting messages limit",
-				zap.Any("value", limitMessagesEntry.Text),
+		var limit int
+		var err error
+		if limitMessagesEntry.Text == "" {
+			limitMessagesEntry.SetText(preferences.DefaultUIChatStatsMenuLimit)
+		}
+		if limit, err = utils.ValidateAndGetNumeric(
+			limitMessagesEntry.Text, 1, math.MaxInt32,
+		); err != nil {
+			cl.ExtLog.Warn("bad messages limit",
+				zap.String("value", limitMessagesEntry.Text),
 				zap.Error(err),
 			)
 			enableAll()
 			return
-		} else if v == "" {
-			req.MessagesLimit = 0
-		} else if limit, err := utils.ValidateAndGetNumeric(v); err != nil {
-			cl.ExtLog.Warn("bad messages limit",
-				zap.Any("value", v), zap.Error(err),
-			)
-			enableAll()
-			return
-		} else {
-			req.MessagesLimit = limit
 		}
+		req.MessagesLimit = limit
 
-		out, _ := st.ChatStats.Output.Get()
-		req.Output = out
+		if outputEntry.Text == "" {
+			outputEntry.SetText(
+				"chat-stats-" + time.Now().Format("20060102-150405") + ".csv",
+			)
+		}
+		req.Output = outputEntry.Text
 
 		if err := req.Validate(); err != nil {
-			cl.ExtLog.Warn("bad GetChatStatsRequest",
-				zap.Any("req", req), zap.Error(err),
+			cl.ExtLog.Error("validating get chat stats request failed",
+				zap.Error(err),
 			)
 			enableAll()
 			return
 		}
+
+		prefs.SetString(preferences.KeyUIChatStatsMenuChat, chatNameEntry.Text)
+		prefs.SetString(preferences.KeyUIChatStatsMenuLimit, limitMessagesEntry.Text)
+		prefs.SetString(preferences.KeyUIChatStatsMenuOutput, outputEntry.Text)
 
 		errCh := make(chan error, 1)
 		go func() {
@@ -189,16 +141,17 @@ func chatStatsMenu(r *Router) fyne.CanvasObject {
 	return container.NewVBox(header, widget.NewSeparator(), form, actions)
 }
 
-// parserMembersMenu parses members. It is the part of mainScreen.
+// membersMenu parses members. It is the part of mainScreen.
 //
-//	Services: *client.Client, *UIMainState
-func parserMembersMenu(r *Router) fyne.CanvasObject {
+//	Services: *client.Client, fyne.App
+func membersMenu(r *Router) fyne.CanvasObject {
 	var (
 		cl *client.Client
-		st *UIMainState
+		a  fyne.App
 	)
-	_ = r.GetServiceAs(&st)
 	_ = r.GetServiceAs(&cl)
+	_ = r.GetServiceAs(&a)
+	prefs := a.Preferences()
 
 	header := widget.NewLabelWithStyle(
 		"Parse members", fyne.TextAlignCenter,
@@ -206,38 +159,48 @@ func parserMembersMenu(r *Router) fyne.CanvasObject {
 	)
 
 	chatNameLabel := widget.NewLabel("Channel or group")
-	chatNameEntry := widget.NewEntryWithData(st.ParserMembers.Chat)
+	chatNameEntry := widget.NewEntry()
 	chatNameEntry.SetPlaceHolder("@chat")
 	chatNameEntry.Validator = nil
+	chatNameEntry.SetText(prefs.String(preferences.KeyUIMembersMenuChat))
 
 	limitMembersLabel := widget.NewLabel("Members limit")
-	limitMembersEntry := widget.NewEntryWithData(st.ParserMembers.Limit)
+	limitMembersEntry := custom.NewNumericalEntry()
 	limitMembersEntry.SetPlaceHolder("1..50000 (default 1000)")
 	limitMembersEntry.Validator = nil
+	limitMembersEntry.SetText(prefs.String(preferences.KeyUIMembersMenuLimit))
 
 	outputLabel := widget.NewLabel("Output CSV")
-	outputEntry := widget.NewEntryWithData(st.ParserMembers.Output)
+	outputEntry := widget.NewEntry()
 	outputEntry.SetPlaceHolder("Optional")
 	outputEntry.Validator = nil
+	outputEntry.SetText(prefs.String(preferences.KeyUIMembersMenuOutput))
 
-	limitMessagesEntry := widget.NewEntryWithData(st.ParserMembers.MessagesLimit)
+	limitMessagesEntry := custom.NewNumericalEntry()
 	limitMessagesEntry.Disable()
 	limitMessagesEntry.SetPlaceHolder("1..5000 (default 10)")
 	limitMessagesEntry.Validator = nil
 
-	parseFromMessagesCheck := widget.NewCheckWithData(
-		"Parse members from messages", st.ParserMembers.ParseFromMessages)
+	parseFromMessagesCheck := widget.NewCheck("Parse members from messages", nil)
 	parseFromMessagesCheck.OnChanged = func(b bool) {
 		if b {
 			limitMessagesEntry.Enable()
+			limitMessagesEntry.SetText(prefs.String(preferences.KeyUIMembersMenuMsgLimit))
 		} else {
 			limitMessagesEntry.Disable()
+			limitMessagesEntry.SetText("")
 		}
 	}
+	parseFromMessagesCheck.SetChecked(prefs.Bool(preferences.KeyUIMembersMenuParseMsgs))
+	if parseFromMessagesCheck.Checked {
+		limitMessagesEntry.SetText(prefs.String(preferences.KeyUIMembersMenuMsgLimit))
+	}
 
-	parseBioCheck := widget.NewCheckWithData("Parse bio", st.ParserMembers.ParseBio)
-	addInfoCheck := widget.NewCheckWithData(
-		"Add additional info", st.ParserMembers.AddAdditional)
+	parseBioCheck := widget.NewCheck("Parse bio", nil)
+	parseBioCheck.SetChecked(prefs.Bool(preferences.KeyUIMembersMenuParseBio))
+
+	addInfoCheck := widget.NewCheck("Add additional info", nil)
+	addInfoCheck.SetChecked(prefs.Bool(preferences.KeyUIMembersMenuAddInfo))
 
 	parseButton := widget.NewButton("Parse", nil)
 
@@ -271,73 +234,77 @@ func parserMembersMenu(r *Router) fyne.CanvasObject {
 
 		req := &client.GetMembersRequest{}
 
-		chat, _ := st.ParserMembers.Chat.Get()
-		if err := utils.PreValidateChatName(chat); err != nil {
+		chatKind, chat := utils.ValidateChatName(chatNameEntry.Text)
+		if chatKind == utils.ChatNameEmpty {
 			cl.ExtLog.Warn("bad chat name",
-				zap.String("chat", chat), zap.Error(err),
-			)
+				zap.String("chat", chat))
 			enableAll()
 			return
 		}
 		req.ChatID = chat
+		req.InviteLink = chatKind == utils.ChatNameInviteLink
 
-		if v, err := st.ParserMembers.Limit.Get(); err != nil {
-			cl.ExtLog.Warn("something wrong getting members limit",
-				zap.Any("value", limitMembersEntry.Text),
+		var membersLimit int
+		var err error
+		if limitMembersEntry.Text == "" {
+			limitMembersEntry.SetText(preferences.DefaultUIMembersMenuLimit)
+		}
+		if membersLimit, err = utils.ValidateAndGetNumeric(
+			limitMembersEntry.Text, 1, 50000,
+		); err != nil {
+			cl.ExtLog.Warn("bad members limit",
+				zap.String("value", limitMembersEntry.Text),
 				zap.Error(err),
 			)
 			enableAll()
 			return
-		} else if v == "" {
-			req.Limit = 0
-		} else if limit, err := utils.ValidateAndGetNumeric(v); err != nil {
-			cl.ExtLog.Warn("bad members limit",
-				zap.Any("value", v), zap.Error(err),
-			)
-			enableAll()
-			return
-		} else {
-			req.Limit = limit
 		}
+		req.Limit = membersLimit
 
-		out, _ := st.ParserMembers.Output.Get()
-		req.Output = out
+		if outputEntry.Text == "" {
+			outputEntry.SetText(
+				"chat-members-" + time.Now().Format("20060102-150405") + ".csv",
+			)
+		}
+		req.Output = outputEntry.Text
 
-		parseFrom, _ := st.ParserMembers.ParseFromMessages.Get()
-		if parseFrom {
-			req.ParseFromMessages = true
-
-			if v, err := st.ParserMembers.MessagesLimit.Get(); err != nil {
-				cl.ExtLog.Warn("something wrong getting messages limit",
-					zap.Any("value", limitMessagesEntry.Text),
+		if parseFromMessagesCheck.Checked {
+			var msgLimit int
+			if limitMessagesEntry.Text == "" {
+				limitMessagesEntry.SetText(preferences.DefaultUIMemberMenuMsgLimit)
+			}
+			if msgLimit, err = utils.ValidateAndGetNumeric(
+				limitMessagesEntry.Text, 1, 5000,
+			); err != nil {
+				cl.ExtLog.Warn("bad messages limit",
+					zap.String("value", limitMessagesEntry.Text),
 					zap.Error(err),
 				)
 				enableAll()
-			} else if v == "" {
-				req.MessagesLimit = 0
-			} else if limit, err := utils.ValidateAndGetNumeric(v); err != nil {
-				cl.ExtLog.Warn("bad messages limit",
-					zap.Any("value", v), zap.Error(err),
-				)
-				enableAll()
 				return
-			} else {
-				req.MessagesLimit = limit
 			}
+			req.ParseFromMessages = true
+			req.MessagesLimit = msgLimit
 		}
 
-		addInfo, _ := st.ParserMembers.AddAdditional.Get()
-		req.AddAdditionalInfo = addInfo
-		parseBio, _ := st.ParserMembers.ParseBio.Get()
-		req.ParseBio = parseBio
+		req.ParseBio = parseBioCheck.Checked
+		req.AddAdditionalInfo = addInfoCheck.Checked
 
 		if err := req.Validate(); err != nil {
-			cl.ExtLog.Warn("bad GetMembersRequest",
-				zap.Any("req", req), zap.Error(err),
+			cl.ExtLog.Error("validating get chat members request failed",
+				zap.Error(err),
 			)
 			enableAll()
 			return
 		}
+
+		prefs.SetString(preferences.KeyUIMembersMenuChat, chatNameEntry.Text)
+		prefs.SetString(preferences.KeyUIMembersMenuLimit, limitMembersEntry.Text)
+		prefs.SetString(preferences.KeyUIMembersMenuOutput, outputEntry.Text)
+		prefs.SetBool(preferences.KeyUIMembersMenuParseMsgs, parseFromMessagesCheck.Checked)
+		prefs.SetString(preferences.KeyUIMembersMenuMsgLimit, limitMessagesEntry.Text)
+		prefs.SetBool(preferences.KeyUIMembersMenuParseBio, parseBioCheck.Checked)
+		prefs.SetBool(preferences.KeyUIMembersMenuAddInfo, addInfoCheck.Checked)
 
 		errCh := make(chan error, 1)
 		go func() {
@@ -375,73 +342,70 @@ func parserMembersMenu(r *Router) fyne.CanvasObject {
 
 // searchMessagesMenu search messages from username in given chat. It is the part of mainScreen.
 //
-//	Services: *client.Client, *UIMainState
+//	Services: *client.Client, fyne.App
 func searchMessagesMenu(r *Router) fyne.CanvasObject {
 	var (
 		cl *client.Client
-		st *UIMainState
+		a  fyne.App
 	)
-	_ = r.GetServiceAs(&st)
 	_ = r.GetServiceAs(&cl)
+	_ = r.GetServiceAs(&a)
+	prefs := a.Preferences()
 
 	header := widget.NewLabelWithStyle("Search messages",
 		fyne.TextAlignCenter, fyne.TextStyle{Bold: true},
 	)
 
-	chatNameEntry := widget.NewEntryWithData(st.SearchMessages.Chat)
+	chatNameEntry := widget.NewEntry()
 	chatNameEntry.SetPlaceHolder("@chat or t.me/username or id")
 	chatNameEntry.Validator = nil
+	chatNameEntry.SetText(prefs.String(preferences.KeyUIMsgSearcherMenuChat))
 
-	usernameEntry := widget.NewEntryWithData(st.SearchMessages.Username)
+	usernameEntry := widget.NewEntry()
 	usernameEntry.SetPlaceHolder("@username")
 	usernameEntry.Validator = nil
+	usernameEntry.SetText(prefs.String(preferences.KeyUIMsgSearcherMenuUsername))
 
-	outputEntry := widget.NewEntryWithData(st.SearchMessages.Output)
+	outputEntry := widget.NewEntry()
 	outputEntry.SetPlaceHolder("Optional")
 	outputEntry.Validator = nil
+	outputEntry.SetText(prefs.String(preferences.KeyUIMsgSearcherMenuOutput))
 
 	form := container.New(layout.NewFormLayout(),
 		widget.NewLabel("Channel or group"), chatNameEntry,
 		widget.NewLabel("Username"), usernameEntry,
 		widget.NewLabel("Output CSV"), outputEntry,
 	)
-
-	fromDateEntry, toDateEntry := widget.NewDateEntry(), widget.NewDateEntry()
 	t := time.Now()
-	fromDateEntry.SetDate(&t)
-	toDateEntry.SetDate(&t)
+	fromDateEntry, toDateEntry := widget.NewDateEntry(), widget.NewDateEntry()
+	if fd, err := time.Parse(
+		prefs.String(preferences.KeyUIMsgSearcherMenuFromDate),
+		"01/02/2006",
+	); err == nil {
+		fromDateEntry.SetDate(&fd)
+	} else {
+		fromDateEntry.SetDate(&t)
+	}
+	if fd, err := time.Parse(
+		prefs.String(preferences.KeyUIMsgSearcherMenuToDate),
+		"01/02/2006",
+	); err == nil {
+		toDateEntry.SetDate(&fd)
+	} else {
+		toDateEntry.SetDate(&t)
+	}
 	fromDateEntry.SetPlaceHolder("MM/DD/YYYY")
 	toDateEntry.SetPlaceHolder("MM/DD/YYYY")
 	fromDateEntry.Validator = nil
 	fromDateEntry.OnChanged = func(d *time.Time) {
 		cl.ExtLog.Debug("call from date changed", zap.Any("date", d))
-		if d == nil {
-			return
-		}
-		if d.Year() <= 2000 {
-			return
-		}
-		if d.Month() > 12 || d.Month() < 1 || d.Day() < 1 || d.Day() > 31 {
-			return
-		}
-		_ = st.SearchMessages.FromDate.Set(d.Format("01/02/2006"))
-		t, _ := st.SearchMessages.FromDate.Get()
+		utils.ValidateTime(d)
 		cl.ExtLog.Debug("from date changed", zap.Any("date", t))
 	}
 	toDateEntry.Validator = nil
 	toDateEntry.OnChanged = func(d *time.Time) {
 		cl.ExtLog.Debug("call to date changed", zap.Any("date", d))
-		if d == nil {
-			return
-		}
-		if d.Year() <= 2000 {
-			return
-		}
-		if d.Month() > 12 || d.Month() < 1 || d.Day() < 1 || d.Day() > 31 {
-			return
-		}
-		_ = st.SearchMessages.ToDate.Set(d.Format("01/02/2006"))
-		t, _ := st.SearchMessages.ToDate.Get()
+		utils.ValidateTime(d)
 		cl.ExtLog.Debug("to date changed", zap.Any("date", t))
 	}
 	dateRow := container.NewCenter(
@@ -489,44 +453,61 @@ func searchMessagesMenu(r *Router) fyne.CanvasObject {
 
 		req := &client.SearchMessagesRequest{}
 
-		chat, _ := st.SearchMessages.Chat.Get()
-		if err := utils.PreValidateChatName(chat); err != nil {
+		chatKind, chat := utils.ValidateChatName(chatNameEntry.Text)
+		if chatKind == utils.ChatNameEmpty {
 			cl.ExtLog.Warn("bad chat name",
-				zap.String("chat", chat), zap.Error(err),
-			)
+				zap.String("chat", chat))
 			enableAll()
 			return
 		}
 		req.ChatID = chat
+		req.InviteLink = chatKind == utils.ChatNameInviteLink
 
-		username, _ := st.SearchMessages.Username.Get()
-		if err := utils.PreValidateChatName(username); err != nil {
+		if !utils.ValidateUsername(usernameEntry.Text) {
 			cl.ExtLog.Warn("bad username",
-				zap.String("username", username), zap.Error(err),
-			)
+				zap.String("username", usernameEntry.Text))
 			enableAll()
 			return
 		}
-		req.Username = username
+		req.Username = usernameEntry.Text
 
-		out, _ := st.SearchMessages.Output.Get()
-		req.Output = out
+		if outputEntry.Text == "" {
+			outputEntry.SetText(
+				"chat-members-" + time.Now().Format("20060102-150405") + ".csv",
+			)
+		}
+		req.Output = outputEntry.Text
 
-		fromDateEntry.OnChanged(fromDateEntry.Date)
-		toDateEntry.OnChanged(toDateEntry.Date)
+		if !utils.ValidateTime(fromDateEntry.Date) {
+			cl.ExtLog.Warn("bad from date",
+				zap.Any("date", fromDateEntry.Date))
+			enableAll()
+			return
+		}
+		if !utils.ValidateTime(toDateEntry.Date) {
+			cl.ExtLog.Warn("bad to date",
+				zap.Any("date", toDateEntry.Date))
+			enableAll()
+			return
+		}
 
-		fromDate, _ := st.SearchMessages.FromDate.Get()
-		req.FromDate = fromDate
-		toDate, _ := st.SearchMessages.ToDate.Get()
-		req.ToDate = toDate
+		req.FromDate = fromDateEntry.Date.Format("2006/01/02")
+		req.ToDate = toDateEntry.Date.Format("2006/01/02")
 
 		if err := req.Validate(); err != nil {
-			cl.ExtLog.Warn("bad SearchMessagesRequest",
-				zap.Any("req", req), zap.Error(err),
+			cl.ExtLog.Error("validating search messages request failed",
+				zap.Error(err),
 			)
 			enableAll()
 			return
 		}
+
+		prefs.SetString(preferences.KeyUIMsgSearcherMenuChat, chatNameEntry.Text)
+		prefs.SetString(preferences.KeyUIMsgSearcherMenuUsername, usernameEntry.Text)
+		prefs.SetString(preferences.KeyUIMsgSearcherMenuOutput, outputEntry.Text)
+		prefs.SetString(preferences.KeyUIMsgSearcherMenuFromDate, req.FromDate)
+		prefs.SetString(preferences.KeyUIMsgSearcherMenuToDate, req.ToDate)
+
 		errCh := make(chan error, 1)
 		go func() {
 			errCh <- cl.SearchMessages(req, false)
@@ -543,16 +524,32 @@ func searchMessagesMenu(r *Router) fyne.CanvasObject {
 	)
 }
 
+// TODO:
+func printDialogsMenu(r *Router) fyne.CanvasObject {
+	printButton := widget.NewButton("Print dialogs", nil)
+	printButton.OnTapped = func() {
+
+	}
+	return container.NewVBox()
+}
+
+// TODO:
+func loadingScreen() fyne.CanvasObject {
+	return container.NewVBox(
+		widget.NewLabel("Loading..."),
+		widget.NewProgressBarInfinite(),
+	)
+}
+
 // mainScreen is the main application screen, that shows after login.
 //
-//	Services: *client.Client, fyne.Window
+//	Services: *client.Client, fyne.Window, fyne.App(not used here, but need)
 func mainScreen(r *Router) fyne.CanvasObject {
 	var w fyne.Window
 	_ = r.GetServiceAs(&w)
 	w.Resize(fyne.NewSize(800, 600))
 	var cl *client.Client
 	_ = r.GetServiceAs(&cl)
-	r.PutService(NewUIState())
 
 	content := container.NewStack()
 	content.Objects = []fyne.CanvasObject{}
@@ -561,15 +558,15 @@ func mainScreen(r *Router) fyne.CanvasObject {
 		content.Refresh()
 	}
 
-	logGrid := NewLogGrid(widget.TextGridStyleDefault)
+	logGrid := custom.NewLogGrid(widget.TextGridStyleDefault)
 	cl.SetUserLogger(logGrid.Pushback)
 	// logGrid.Scroll.Hide()
 
 	menu := container.NewHBox(
 		layout.NewSpacer(),
 
-		widget.NewButton("Parse Members", func() {
-			setContent(parserMembersMenu(r))
+		widget.NewButton("Members", func() {
+			setContent(membersMenu(r))
 			// logGrid.Scroll.Show()
 		}),
 		widget.NewButton("Chat Stats", func() {
@@ -587,6 +584,8 @@ func mainScreen(r *Router) fyne.CanvasObject {
 
 		layout.NewSpacer(),
 	)
+
+	cl.CheckConnection()
 
 	return container.NewBorder(
 		menu, nil, nil, nil,
