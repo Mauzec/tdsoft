@@ -6,7 +6,7 @@
 
 ## Usage
 
-* Requires **Go >= 1.21** (tested up to 1.24)
+* Requires **Go >= 1.21**
 * Requires all **Python** dependencies installed (see `requirements.txt`)
 
 Start the GUI
